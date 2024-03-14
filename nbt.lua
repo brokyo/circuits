@@ -24,6 +24,7 @@ local active_tracker_index = 1 -- Used to manage state on norns screen and grid
 local trackers = {
     {
         voice_id = nil, 
+        play = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -39,10 +40,12 @@ local trackers = {
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, root_octave = 4
+        }, 
+        root_octave = 4
     },
     {
         voice_id = nil, 
+        play = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -58,29 +61,12 @@ local trackers = {
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, root_octave = 4
+        }, 
+        root_octave = 4 
     },
     {
         voice_id = nil, 
-        current_position = 0, 
-        length = 8, 
-        steps = {
-            {degrees = {3}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, root_octave = 4
-    },
-    {
-        voice_id = nil, 
+        play = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -96,7 +82,8 @@ local trackers = {
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
             {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, root_octave = 4
+        }, 
+        root_octave = 4
     },
 }
 
@@ -228,18 +215,87 @@ function g.key(x, y, pressed)
     end
 end
 
-function enc(n, d)
-    if n == 1 then
-        active_tracker_index =  util.clamp(active_tracker_index + d, 1, #trackers)
-        grid_redraw()
+local active_section = "loop" -- Vairable to identify and control the active section of the screen
+local selected_param = 1 -- Index to navigate between parameters in active section
+
+function key(n, z)
+    if n == 2 and z == 1 then -- K2 switches to Loop section
+        active_section = "loop"
         redraw()
+    elseif n == 3 and z == 1 then -- K3 switches to Step section 
+        active_section = "step"
+        redraw()
+    end
+end
+
+function enc(n, d)
+    if active_section == "loop" then
+        if n == 2 then -- E2 navigates between parameters in the Loop section
+            selected_param = util.clamp(selected_param + d, 1, 3) -- Three parameters: play state, octave, length
+            redraw()
+        elseif n == 3 then -- E3 modifies the selected parameter
+            if selected_param == 1 then -- Toggle play state
+                if d ~= 0 then -- Check if there's any movement
+                    -- TODO: Write logo to actually handle changing the play state
+                    trackers[active_tracker_index].play = not trackers[active_tracker_index].play
+                    redraw()
+                end
+            elseif selected_param == 2 then -- Change root octave
+                trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
+                redraw()
+            elseif selected_param == 3 then -- Change loop length
+                -- TODO: adapt to 24 steps
+                trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 12)
+                redraw()
+            end
+        end
     end
 end
 
 function redraw()
     screen.clear()
-    screen.move(64, 32)
-    screen.text_center(active_tracker_index)
+
+    -- Draw the tracker number in the center of the screen
+    screen.font_face(1) 
+    screen.font_size(16)
+    screen.level(15)
+    screen.move(63, 32)
+    screen.text_center(tostring(active_tracker_index))
+
+    -- Reset font
+    screen.font_face(1)
+    screen.font_size(8)
+
+    -- Draw indicator to show active section
+    if active_section == "loop" then
+        screen.rect(0, 60, 64, 5)
+    else
+        screen.rect(65, 60, 64, 5)
+    end
+    screen.level(10) -- Set high brightness level for the highlight
+    screen.fill()
+
+    -- TODO: Create step section
+    screen.level(0) -- Invert text color for visibility
+    screen.move(96, 32)
+    screen.text_center("Step")
+
+    -- Display "loop" parameters and their current values
+    if active_section == "loop" then
+        local param_names = {"Play", "Octave", "Length"}
+        local param_values = {
+            trackers[active_tracker_index].play and "Yes" or "No",
+            tostring(trackers[active_tracker_index].root_octave),
+            tostring(trackers[active_tracker_index].length)
+        }
+        
+        for i, param in ipairs(param_names) do
+            screen.level(i == selected_param and 15 or 5) -- Highlight the active parameter
+            screen.move(2, 10 + (i * 10)) -- Adjust positioning as needed
+            screen.text(param .. ": " .. param_values[i])
+        end
+    end
+
     screen.update()
 end
 
