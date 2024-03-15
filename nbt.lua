@@ -328,9 +328,8 @@ function redraw()
 
     -- Display "loop" parameters and their current values
     if active_section == "loop" then
-        local param_names = {"Play", "Octave", "Length"}
+        local param_names = {"Octave", "Length"}
         local param_values = {
-            trackers[active_tracker_index].play and "Yes" or "No",
             tostring(trackers[active_tracker_index].root_octave),
             tostring(trackers[active_tracker_index].length)
         }
