@@ -5,7 +5,6 @@
 local nb = require "nb/lib/nb"
 local musicutil = require "musicutil"
 local lattice = require "lattice"
-local clock = require "clock"
 
 local scale_names = {} -- A bit of a hack to get the scale names into a usable format for setting params
 for i = 1, #musicutil.SCALES do
@@ -24,7 +23,7 @@ local active_tracker_index = 1 -- Used to manage state on norns screen and grid
 local trackers = {
     {
         voice_id = nil, 
-        play = false,
+        playing = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -45,7 +44,7 @@ local trackers = {
     },
     {
         voice_id = nil, 
-        play = false,
+        playing = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -66,7 +65,7 @@ local trackers = {
     },
     {
         voice_id = nil, 
-        play = false,
+        playing = false,
         current_position = 0, 
         length = 8, 
         steps = {
@@ -85,6 +84,27 @@ local trackers = {
         }, 
         root_octave = 4
     },
+    {
+        voice_id = nil, 
+        playing = false,
+        current_position = 0, 
+        length = 8, 
+        steps = {
+            {degrees = {4}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
+        }, 
+        root_octave = 4
+    }
 }
 
 function build_scale(root_octave)
@@ -103,24 +123,26 @@ for i = 1, #trackers do
     
     sequencers[i] = primary_lattice:new_sprocket{
         action = function()
-            tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
+            if tracker.playing then -- Check if the tracker is playing
+                tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
 
-            local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
+                local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
 
-            local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
-            local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
-            
-            sequencers[i]:set_division(current_step.division) -- Set the division for the current step
-            sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
+                local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
+                local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
+                
+                sequencers[i]:set_division(current_step.division) -- Set the division for the current step
+                sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
 
-            if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
-                for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
-                    local note = scale_notes[degree] -- And match it to the appropriate note in the scale
-                    local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                    player:play_note(note, current_step.velocity, 1) -- And play the note
+                if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
+                    for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
+                        local note = scale_notes[degree] -- And match it to the appropriate note in the scale
+                        local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
+                        player:play_note(note, current_step.velocity, 1) -- And play the note
+                    end
                 end
+                grid_redraw()
             end
-            grid_redraw()
         end,
         division = 1
     }
@@ -159,8 +181,9 @@ end
 local CONTROL_COLUMNS_START = 13
 local CONTROL_COLUMNS_END = 16
 local TRACKER_SELECTION_ROW = 8
-local LENGTH_SELECTION_START_ROW = 5
-local LENGTH_SELECTION_END_ROW = 7
+local PLAYBACK_STATUS_ROW = 7
+local LENGTH_SELECTION_START_ROW = 1
+local LENGTH_SELECTION_END_ROW = 3
 
 -- Function to change the active tracker
 function changeActiveTracker(trackerIndex)
@@ -178,14 +201,25 @@ end
 
 -- Logic for handling key pressed on the control panel
 function handleControlColumnPress(x, y, pressed)
-    if not pressed then return end -- Ignore key releases
+    if pressed == 0 then return end -- Ignore key releases
 
     if y == TRACKER_SELECTION_ROW then
         changeActiveTracker(x - CONTROL_COLUMNS_START + 1)
     elseif y >= LENGTH_SELECTION_START_ROW and y <= LENGTH_SELECTION_END_ROW then
         updateTrackerLength(x, y)
+    elseif y == PLAYBACK_STATUS_ROW then
+        -- Toggle the playing state for the tracker corresponding to the pressed key
+        local trackerIndex = x - CONTROL_COLUMNS_START + 1
+        if trackerIndex >= 1 and trackerIndex <= #trackers then
+            trackers[trackerIndex].playing = not trackers[trackerIndex].playing
+            -- Reset the current position if we stop the tracker
+            if not trackers[trackerIndex].playing then
+                trackers[trackerIndex].current_position = 0
+            end
+            grid_redraw()
+        end
     end
-    -- LATER: Maybe velocity, swing, and division are set here. Maybe that's just handled on the norns screen. Dunno.
+    -- Additional control logic can be added here if needed
 end
 
 function g.key(x, y, pressed)
@@ -215,6 +249,18 @@ function g.key(x, y, pressed)
     end
 end
 
+
+function toggle_playback()
+    local active_tracker = trackers[active_tracker_index]
+    active_tracker.playing = not active_tracker.playing
+    if not active_tracker.playing then
+        active_tracker.current_position = 0
+    end
+
+    redraw()
+    grid_redraw()
+end
+
 local active_section = "loop" -- Vairable to identify and control the active section of the screen
 local selected_param = 1 -- Index to navigate between parameters in active section
 
@@ -228,6 +274,7 @@ function key(n, z)
     end
 end
 
+
 function enc(n, d)
     if active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
@@ -236,8 +283,7 @@ function enc(n, d)
         elseif n == 3 then -- E3 modifies the selected parameter
             if selected_param == 1 then -- Toggle play state
                 if d ~= 0 then -- Check if there's any movement
-                    -- TODO: Write logo to actually handle changing the play state
-                    trackers[active_tracker_index].play = not trackers[active_tracker_index].play
+                    toggle_playback()
                     redraw()
                 end
             elseif selected_param == 2 then -- Change root octave
@@ -361,6 +407,12 @@ function grid_redraw()
         else
             g:led(x, TRACKER_SELECTION_ROW, 0) -- Other trackers remain at inactive_light intensity
         end
+    end
+
+    -- Display playback status for each tracker on row 7
+    for i = 1, #trackers do
+        local playbackLight = trackers[i].playing and high_light or inactive_light
+        g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playbackLight)
     end
 
     g:refresh() -- Send the LED buffer to the grid
