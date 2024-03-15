@@ -27,18 +27,18 @@ local trackers = {
         current_position = 0, 
         length = 8, 
         steps = {
-            {degrees = {1, 3}, velocity = 0.5, swing = 50, division = 1.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.25},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1.5},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 1},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {3}, velocity = 0.5, swing = 50, division = 2},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {1, 3}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {3}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 1/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3}
         }, 
         root_octave = 4
     },
@@ -48,18 +48,18 @@ local trackers = {
         current_position = 0, 
         length = 8, 
         steps = {
-            {degrees = {2}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
+            {degrees = {1, 3}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {3}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {8}, velocity = 0.5, swing = 50, division = 2/3},
+            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
         }, 
         root_octave = 4 
     },
@@ -278,18 +278,13 @@ end
 function enc(n, d)
     if active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
-            selected_param = util.clamp(selected_param + d, 1, 3) -- Three parameters: play state, octave, length
+            selected_param = util.clamp(selected_param + d, 1, 2) -- Three parameters: play state, octave, length
             redraw()
         elseif n == 3 then -- E3 modifies the selected parameter
-            if selected_param == 1 then -- Toggle play state
-                if d ~= 0 then -- Check if there's any movement
-                    toggle_playback()
-                    redraw()
-                end
-            elseif selected_param == 2 then -- Change root octave
+            if selected_param == 1 then -- Change root octave
                 trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
                 redraw()
-            elseif selected_param == 3 then -- Change loop length
+            elseif selected_param == 2 then -- Change loop length
                 -- TODO: adapt to 24 steps
                 trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 12)
                 redraw()
