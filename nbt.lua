@@ -304,19 +304,18 @@ function enc(n, d)
             end
         end
     elseif active_section == "step" then
-        if n == 1 then -- E1 to navigate between steps
-            selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
-            redraw()
-        elseif n == 2 then -- E2 to select parameter to edit
-            step_selected_param = util.clamp(step_selected_param + d, 1, 3)
+        if n == 2 then -- E2 to select parameter to edit
+            step_selected_param = util.clamp(step_selected_param + d, 1, 4)
             redraw()
         elseif n == 3 then -- E3 to modify the selected parameter
             local step = trackers[active_tracker_index].steps[selected_step]
-            if step_selected_param == 1 then -- Modify velocity
+            if step_selected_param == 1 then -- Navigate between steps
+                selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
+            elseif step_selected_param == 2 then -- Modify velocity
                 step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
-            elseif step_selected_param == 2 then -- Modify swing
+            elseif step_selected_param == 3 then -- Modify swing
                 step.swing = util.clamp(step.swing + d, 0, 100)
-            elseif step_selected_param == 3 then -- Modify division
+            elseif step_selected_param == 4 then -- Modify division
                 local current_division_index = index_of(division_options, step.division)
                 local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
                 step.division = division_options[new_division_index]
@@ -365,16 +364,14 @@ function redraw()
             screen.text(param .. ": " .. param_values[i])
         end
     elseif active_section == "step" then
-        screen.move(2, 10)
-        screen.text("Editing Step: " .. tostring(selected_step))
         -- Draw parameters for the selected step
         local step = trackers[active_tracker_index].steps[selected_step]
-        local param_names = {"Velocity", "Swing", "Division"}
-        local param_values = {tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)]}
+        local param_names = {"Step", "Velocity", "Swing", "Division"}
+        local param_values = {tostring(selected_step), tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)]}
 
         for i, param in ipairs(param_names) do
             screen.level(i == step_selected_param and 15 or 5) -- Highlight the active parameter
-            screen.move(2, 10 + (i * 10))
+            screen.move(2, 0 + (i * 10))
             screen.text(param .. ": " .. param_values[i])
         end
     end
