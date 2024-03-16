@@ -13,8 +13,8 @@ end
 
 local g = grid.connect()
 
-local inactive_light = 1
-local dim_light = 2
+local inactive_light = 2
+local dim_light = 3
 local medium_light = 5
 local high_light = 10
 
@@ -27,93 +27,34 @@ function index_of(tbl, value)
     return nil -- Return nil if the value is not found
 end
 
-local active_tracker_index = 1 -- Used to manage state on norns screen and grid
+local active_tracker_index = 1 -- Manage editable state on screen and grid
+local active_window_start = 1 -- Manage the editable window on the grid 
+
+function createTracker(voice_id, active_length, root_octave)
+    local MAX_STEPS = 24  -- Maximum possible steps for a tracker
+    local tracker = {
+        voice_id = voice_id,
+        playing = false,
+        current_position = 0,
+        length = active_length,  -- Active segment length
+        steps = {},
+        root_octave = root_octave
+    }
+    
+    -- Initialize steps with default values
+    for i = 1, MAX_STEPS do
+        -- Default step configuration can be adjusted as needed
+        table.insert(tracker.steps, {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3})
+    end
+    
+    return tracker
+end
 
 local trackers = {
-    {
-        voice_id = nil, 
-        playing = false,
-        current_position = 0, 
-        length = 8, 
-        steps = {
-            {degrees = {1, 3}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {3}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 1/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3}
-        }, 
-        root_octave = 4
-    },
-    {
-        voice_id = nil, 
-        playing = false,
-        current_position = 0, 
-        length = 8, 
-        steps = {
-            {degrees = {1, 3}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {3}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 2/3},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 2/3},
-        }, 
-        root_octave = 4 
-    },
-    {
-        voice_id = nil, 
-        playing = false,
-        current_position = 0, 
-        length = 8, 
-        steps = {
-            {degrees = {4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, 
-        root_octave = 4
-    },
-    {
-        voice_id = nil, 
-        playing = false,
-        current_position = 0, 
-        length = 8, 
-        steps = {
-            {degrees = {4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1, 4}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 6}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {2, 7}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {8}, velocity = 0.5, swing = 50, division = 0.5},
-            {degrees = {1}, velocity = 0.5, swing = 50, division = 0.5},
-        }, 
-        root_octave = 4
-    }
+    createTracker(nil, 8, 4),  -- Tracker with 8 active steps out of 24
+    createTracker(nil, 12, 4), -- Tracker with 12 active steps out of 24
+    createTracker(nil, 16, 4), -- Tracker with 16 active steps out of 24
+    createTracker(nil, 24, 4)  -- Tracker with all 24 steps active
 }
 
 function build_scale(root_octave)
@@ -189,33 +130,34 @@ end
 -- Constants to separate the control panel
 local CONTROL_COLUMNS_START = 13
 local CONTROL_COLUMNS_END = 16
-local TRACKER_SELECTION_ROW = 8
+local MINIMAP_START_ROW = 1
+local MINIMAP_END_ROW = 6
 local PLAYBACK_STATUS_ROW = 7
-local LENGTH_SELECTION_START_ROW = 1
-local LENGTH_SELECTION_END_ROW = 3
+local TRACKER_SELECTION_ROW = 8
 
 -- Function to change the active tracker
-function changeActiveTracker(trackerIndex)
+function change_active_tracker(trackerIndex)
     active_tracker_index = trackerIndex
     grid_redraw()
     redraw()
 end
 
--- Function to update the length of the active tracker (i.e the number of steps that will play of the possible 12)
-function updateTrackerLength(x, y)
-    local lengthOffset = (y - LENGTH_SELECTION_START_ROW) * 4 + (x - CONTROL_COLUMNS_START + 1)
+-- Function to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
+function update_tracker_length(x, y)
+    local lengthOffset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
     trackers[active_tracker_index].length = lengthOffset
     grid_redraw()
+    redraw()
 end
 
 -- Logic for handling key pressed on the control panel
-function handleControlColumnPress(x, y, pressed)
+function handle_control_column_press(x, y, pressed)
     if pressed == 0 then return end -- Ignore key releases
 
     if y == TRACKER_SELECTION_ROW then
-        changeActiveTracker(x - CONTROL_COLUMNS_START + 1)
-    elseif y >= LENGTH_SELECTION_START_ROW and y <= LENGTH_SELECTION_END_ROW then
-        updateTrackerLength(x, y)
+        change_active_tracker(x - CONTROL_COLUMNS_START + 1)
+    elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then
+        update_tracker_length(x, y)
     elseif y == PLAYBACK_STATUS_ROW then
         -- Toggle the playing state for the tracker corresponding to the pressed key
         local trackerIndex = x - CONTROL_COLUMNS_START + 1
@@ -232,24 +174,27 @@ end
 
 function g.key(x, y, pressed)
     if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then -- Catch key presses in the control panel and handle them with distinct logic
-        handleControlColumnPress(x, y, pressed)
+        handle_control_column_press(x, y, pressed)
     else -- Otherwise treat them as edits to the tracker (LATER: Break this logic out as well)
         local degree = 9 - y -- Invert the y-coordinate to match the horizontal layout
         local working_tracker = trackers[active_tracker_index]
 
-        if pressed == 1 and x <= 12 then -- When a degree is pressed and the associated step is less than the max sequence length
+        local adjusted_x = x + active_window_start - 1 -- Adjust x based on the active_window_start
+
+
+        if pressed == 1 and adjusted_x <= 24 then -- When a degree is pressed and the associated step is less than the max sequence length
             local index = nil
-            for i, v in ipairs(working_tracker.steps[x].degrees) do
+            for i, v in ipairs(working_tracker.steps[adjusted_x].degrees) do
                 if v == degree then
                     index = i
                     break
                 end
             end
             if index then -- If it is, remove it
-                table.remove(working_tracker.steps[x].degrees, index)
+                table.remove(working_tracker.steps[adjusted_x].degrees, index)
                 print("Degree " .. degree .. " removed from step " .. x)
             else -- If it is not, add it
-                table.insert(working_tracker.steps[x].degrees, degree)
+                table.insert(working_tracker.steps[adjusted_x].degrees, degree)
                 print("Degree " .. degree .. " added to step " .. x)
             end
             grid_redraw()
@@ -289,7 +234,10 @@ end
 
 
 function enc(n, d)
-    if active_section == "loop" then
+    if n == 1 then -- Encoder 1 adjusts the active window start in all modes
+        active_window_start = util.clamp(active_window_start + d, 1, 13) -- Ensures the window doesn't go beyond the steps. Adjusts up to step 13 to allow a full window of 12 steps.
+        grid_redraw()
+    elseif active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
             loop_selected_param = util.clamp(loop_selected_param + d, 1, 2) -- Three parameters: play state, octave, length
             redraw()
@@ -298,8 +246,7 @@ function enc(n, d)
                 trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
                 redraw()
             elseif loop_selected_param == 2 then -- Change loop length
-                -- TODO: adapt to 24 steps
-                trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 12)
+                trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 24)
                 redraw()
             end
         end
@@ -389,7 +336,9 @@ function grid_redraw()
     g:all(0) -- Zero out grid
 
     -- Draw Tracker
-    for step = 1, 12 do -- Iterate through each step
+    for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
+        if step > 24 then print("step exceeds length") break end -- Catch errors
+        local grid_step = step - active_window_start + 1 -- Adjusted step for drawing degrees on the grid
         for degree = 1, 8 do -- Iterate through each degree in the step
             local grid_y = 9 - degree -- Invert the y-coordinate
             local active_degrees = working_tracker.steps[step].degrees -- Grab the table of degrees in the step
@@ -403,29 +352,26 @@ function grid_redraw()
                 end
             end
 
-            -- Determine the light intensity based on the current step, position, and if the degree is active
-            if step == working_tracker.current_position then
-                if is_active_degree then
-                    g:led(step, grid_y, high_light) -- Light it brightly for active degrees at the current position
-                else
-                    g:led(step, grid_y, dim_light) -- Light it dimly for inactive degrees at the current position
-                end
+            -- Determine the light intensity based on the current step (within active window on grid), position, and if the degree is active
+            if step == working_tracker.current_position and step >= active_window_start and step <= active_window_start + 11 then
+                g:led(grid_step, grid_y, is_active_degree and high_light or dim_light)
             elseif is_active_degree then
-                if step > working_tracker.length then
-                    g:led(step, grid_y, inactive_light) -- Light it at inactive_light for active degrees in steps beyond the tracker length
-                else
-                    g:led(step, grid_y, medium_light) -- Light it medium for active degrees not at the current position
-                end
+                g:led(grid_step, grid_y, step > working_tracker.length and inactive_light or medium_light)
             end
         end
     end
 
-    -- Highlight the length of the active tracker
-    for y = LENGTH_SELECTION_START_ROW, LENGTH_SELECTION_END_ROW do
+    -- Highlight the 12 steps in the active window  length of the active tracker
+    for y = MINIMAP_START_ROW, MINIMAP_END_ROW do
         for x = CONTROL_COLUMNS_START, CONTROL_COLUMNS_END do
-            local lengthValue = (y - LENGTH_SELECTION_START_ROW) * 4 + (x - CONTROL_COLUMNS_START + 1)
+            local lengthValue = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
             if lengthValue <= trackers[active_tracker_index].length then
-                g:led(x, y, 3)
+                -- Check if the current minimap position corresponds to the active step
+                if lengthValue == working_tracker.current_position then
+                    g:led(x, y, 6) -- Use high_light for the active step
+                else
+                    g:led(x, y, dim_light) -- Use a lower intensity for other steps
+                end
             else
                 g:led(x, y, 1)
             end
