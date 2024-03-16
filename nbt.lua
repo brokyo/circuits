@@ -18,6 +18,15 @@ local dim_light = 2
 local medium_light = 5
 local high_light = 10
 
+function index_of(tbl, value)
+    for i, v in ipairs(tbl) do
+        if v == value then
+            return i
+        end
+    end
+    return nil -- Return nil if the value is not found
+end
+
 local active_tracker_index = 1 -- Used to manage state on norns screen and grid
 
 local trackers = {
@@ -219,7 +228,6 @@ function handleControlColumnPress(x, y, pressed)
             grid_redraw()
         end
     end
-    -- Additional control logic can be added here if needed
 end
 
 function g.key(x, y, pressed)
@@ -262,7 +270,12 @@ function toggle_playback()
 end
 
 local active_section = "loop" -- Vairable to identify and control the active section of the screen
-local selected_param = 1 -- Index to navigate between parameters in active section
+local selected_step = 1 -- Individual step to edit
+local loop_selected_param = 1 -- Index to navigate between parameters in the loop section
+local step_selected_param = 1 -- Index to navigate between parameters in the step section
+
+local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
+local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4"} -- Names as strings for showing in param list
 
 function key(n, z)
     if n == 2 and z == 1 then -- K2 switches to Loop section
@@ -278,17 +291,37 @@ end
 function enc(n, d)
     if active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
-            selected_param = util.clamp(selected_param + d, 1, 2) -- Three parameters: play state, octave, length
+            loop_selected_param = util.clamp(loop_selected_param + d, 1, 2) -- Three parameters: play state, octave, length
             redraw()
         elseif n == 3 then -- E3 modifies the selected parameter
-            if selected_param == 1 then -- Change root octave
+            if loop_selected_param == 1 then -- Change root octave
                 trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
                 redraw()
-            elseif selected_param == 2 then -- Change loop length
+            elseif loop_selected_param == 2 then -- Change loop length
                 -- TODO: adapt to 24 steps
                 trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 12)
                 redraw()
             end
+        end
+    elseif active_section == "step" then
+        if n == 1 then -- E1 to navigate between steps
+            selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
+            redraw()
+        elseif n == 2 then -- E2 to select parameter to edit
+            step_selected_param = util.clamp(step_selected_param + d, 1, 3)
+            redraw()
+        elseif n == 3 then -- E3 to modify the selected parameter
+            local step = trackers[active_tracker_index].steps[selected_step]
+            if step_selected_param == 1 then -- Modify velocity
+                step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
+            elseif step_selected_param == 2 then -- Modify swing
+                step.swing = util.clamp(step.swing + d, 0, 100)
+            elseif step_selected_param == 3 then -- Modify division
+                local current_division_index = index_of(division_options, step.division)
+                local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
+                step.division = division_options[new_division_index]
+            end
+            redraw()
         end
     end
 end
@@ -296,32 +329,29 @@ end
 function redraw()
     screen.clear()
 
-    -- Draw the tracker number in the center of the screen
-    screen.font_face(1) 
-    screen.font_size(16)
-    screen.level(15)
-    screen.move(63, 32)
-    screen.text_center(tostring(active_tracker_index))
-
-    -- Reset font
-    screen.font_face(1)
-    screen.font_size(8)
-
-    -- Draw indicator to show active section
+    -- Mode Selector
+    -- Loop Edit
+    screen.rect(1, 54, 60, 10)    
     if active_section == "loop" then
-        screen.rect(0, 60, 64, 5)
+        screen.level(6)
     else
-        screen.rect(65, 60, 64, 5)
+        screen.level(1)
     end
-    screen.level(10) -- Set high brightness level for the highlight
-    screen.fill()
+    screen.stroke()
+    screen.move(32, 61)
+    screen.text_center("Loop (k2)")
 
-    -- TODO: Create step section
-    screen.level(0) -- Invert text color for visibility
-    screen.move(96, 32)
-    screen.text_center("Step")
+    -- Step Edit
+    screen.rect(67, 54, 60, 10)
+    if active_section == "step" then
+        screen.level(6)
+    else
+        screen.level(1)
+    end
+    screen.stroke()
+    screen.move(96, 61)
+    screen.text_center("Step (k3)")
 
-    -- Display "loop" parameters and their current values
     if active_section == "loop" then
         local param_names = {"Octave", "Length"}
         local param_values = {
@@ -330,12 +360,24 @@ function redraw()
         }
         
         for i, param in ipairs(param_names) do
-            screen.level(i == selected_param and 15 or 5) -- Highlight the active parameter
-            screen.move(2, 10 + (i * 10)) -- Adjust positioning as needed
+            screen.level(i == loop_selected_param and 15 or 5) -- Highlight the active parameter
+            screen.move(2, 10 + (i * 10))
+            screen.text(param .. ": " .. param_values[i])
+        end
+    elseif active_section == "step" then
+        screen.move(2, 10)
+        screen.text("Editing Step: " .. tostring(selected_step))
+        -- Draw parameters for the selected step
+        local step = trackers[active_tracker_index].steps[selected_step]
+        local param_names = {"Velocity", "Swing", "Division"}
+        local param_values = {tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)]}
+
+        for i, param in ipairs(param_names) do
+            screen.level(i == step_selected_param and 15 or 5) -- Highlight the active parameter
+            screen.move(2, 10 + (i * 10))
             screen.text(param .. ": " .. param_values[i])
         end
     end
-
     screen.update()
 end
 
