@@ -1,5 +1,6 @@
 -- TBD
 -- Quad polyphonic tracker
+-- A work in progess
 
 -- -- Core libraries
 local nb = require "nb/lib/nb"
@@ -67,7 +68,7 @@ function createTracker(voice_id, active_length, root_octave) -- Helper function 
     
     -- Initialize steps with default values
     for i = 1, MAX_STEPS do
-        table.insert(tracker.steps, {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3})
+        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/3})
     end
     
     return tracker
@@ -405,7 +406,7 @@ function grid_redraw()
 
     -- Display playback status for each tracker on row 7
     for i = 1, #trackers do
-        local playbackLight = trackers[i].playing and high_light or inactive_light
+        local playbackLight = trackers[i].playing and high_light or 0
         g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playbackLight)
     end
 
