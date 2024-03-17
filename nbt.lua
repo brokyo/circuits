@@ -48,6 +48,12 @@ local MINIMAP_END_ROW = 6
 local PLAYBACK_STATUS_ROW = 7
 local TRACKER_SELECTION_ROW = 8
 
+-- Table for catching keycombos
+local key_states = {
+    tracker_selection = {},
+    minimap = {}
+}
+
 function createTracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
     local MAX_STEPS = 24 
     local tracker = {
@@ -124,10 +130,22 @@ end
 
 -- Logic to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
 function update_tracker_length(x, y)
-    local lengthOffset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
-    trackers[active_tracker_index].length = lengthOffset
-    grid_redraw()
-    redraw()
+    -- Check if any tracker selection key is pressed
+    local anyTrackerSelectionKeyPressed = false
+    for _, isPressed in pairs(key_states.tracker_selection) do
+        if isPressed then
+            anyTrackerSelectionKeyPressed = true
+            break
+        end
+    end
+
+    -- Only update tracker length if no tracker selection key is pressed
+    if not anyTrackerSelectionKeyPressed then
+        local lengthOffset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
+        trackers[active_tracker_index].length = lengthOffset
+        grid_redraw()
+        redraw()
+    end
 end
 
 -- Logic to change playback state
@@ -142,26 +160,53 @@ function toggle_tracker_playback(tracker_index)
     grid_redraw()
 end
 
+function step_edit_shortcut(tracker_index, minimap_key)
+    if minimap_key == nil then return end -- Exit function if there's no minimap_key pressed
+    active_section = "step"
+    active_tracker_index = tracker_index
+    selected_step = minimap_key
+    redraw()
+end
+
 -- Logic for handling key pressed on the control panel (columns 13 > 16)
 function handle_control_column_press(x, y, pressed)
+    -- Update key_states table
+    if y == TRACKER_SELECTION_ROW then
+        key_states.tracker_selection[x - CONTROL_COLUMNS_START + 1] = (pressed == 1)
+    elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then
+        key_states.minimap[(y - MINIMAP_START_ROW) * 4 + (x - CONTROL_COLUMNS_START + 1)] = (pressed == 1)
+    end
+
     if pressed == 0 then return end -- Ignore key releases
 
-    if y == TRACKER_SELECTION_ROW then -- Change active tracker by pressing corresponding key
-        change_active_tracker(x - CONTROL_COLUMNS_START + 1)
+    if y == TRACKER_SELECTION_ROW then -- Change active tracker by pressing corresponding key (ALT: handle keycombo for editing shortcut)
+        local selected_tracker = x - CONTROL_COLUMNS_START + 1
+        if selected_tracker == active_tracker_index then -- Enable editing shortcut if this is already the active tracker
+            step_edit_shortcut(selected_tracker)
+        else
+            change_active_tracker(selected_tracker) -- Otherwise change the tracker
+        end
     elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then -- Change tracker length by pressing final step
         update_tracker_length(x, y)
     elseif y == PLAYBACK_STATUS_ROW then -- Toggle playback status
         toggle_tracker_playback(x - CONTROL_COLUMNS_START + 1)
-        -- trackers[trackerIndex].playing = not trackers[trackerIndex].playing
-        -- -- Reset the current_position to start if stopping
-        -- if not trackers[trackerIndex].playing then
-        --     trackers[trackerIndex].current_position = 0
-        -- end
-        -- grid_redraw()
+    end
+
+    -- Check for key combination after updating states
+    for tracker_index, is_pressed in pairs(key_states.tracker_selection) do
+        if is_pressed then
+            for step_index, is_minimap_pressed in pairs(key_states.minimap) do
+                if is_minimap_pressed then
+                    -- Call the function to jump to the step edit mode for the selected step
+                    step_edit_shortcut(tracker_index, step_index)
+                    return -- Exit early to avoid processing other keys
+                end
+            end
+        end
     end
 end
 
-function g.key(x, y, pressed)
+function g.key(x, y, pressed)    
     if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then -- Catch key presses in the control panel and handle them with distinct logic
         handle_control_column_press(x, y, pressed)
     else -- Otherwise treat them as edits to the tracker (LATER: Break this logic out as well)
