@@ -32,6 +32,23 @@ local high_light = 10
 local active_tracker_index = 1 -- Manage editable state on screen and grid
 local active_window_start = 1 -- Manage the editable window on the grid 
 
+local active_section = "loop" -- Vairable to identify and control the active section of the screen
+local selected_step = 1 -- Individual step to edit
+local loop_selected_param = 1 -- Index to navigate between parameters in the loop section
+local step_selected_param = 1 -- Index to navigate between parameters in the step section
+
+local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
+local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4"} -- Names as strings for showing in param list
+
+-- Constants to separate the control panel
+local CONTROL_COLUMNS_START = 13
+local CONTROL_COLUMNS_END = 16
+local MINIMAP_START_ROW = 1
+local MINIMAP_END_ROW = 6
+local PLAYBACK_STATUS_ROW = 7
+local TRACKER_SELECTION_ROW = 8
+
+
 function createTracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
     local MAX_STEPS = 24 
     local tracker = {
@@ -98,43 +115,6 @@ for i = 1, #trackers do
         division = 1
     }
 end
-
-function init()
-    
-    params:add{
-        type = "option",
-        id = "key",
-        name = "Key",
-        options = musicutil.NOTE_NAMES,
-        default = 3
-      }
-      
-      params:add{
-        type = "option",
-        id = "mode",
-        name = "Mode",
-        options = scale_names,
-        default = 5,
-      }
-
-    nb:init()
-    for i = 1, #trackers do
-        nb:add_param("voice_" .. i, "voice_" .. i)
-    end
-    nb:add_player_params()
-
-    primary_lattice:start()
-    grid_redraw()
-
-end
-
--- Constants to separate the control panel
-local CONTROL_COLUMNS_START = 13
-local CONTROL_COLUMNS_END = 16
-local MINIMAP_START_ROW = 1
-local MINIMAP_END_ROW = 6
-local PLAYBACK_STATUS_ROW = 7
-local TRACKER_SELECTION_ROW = 8
 
 -- Function to change the active tracker
 function change_active_tracker(trackerIndex)
@@ -214,14 +194,6 @@ function toggle_playback()
     redraw()
     grid_redraw()
 end
-
-local active_section = "loop" -- Vairable to identify and control the active section of the screen
-local selected_step = 1 -- Individual step to edit
-local loop_selected_param = 1 -- Index to navigate between parameters in the loop section
-local step_selected_param = 1 -- Index to navigate between parameters in the step section
-
-local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
-local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4"} -- Names as strings for showing in param list
 
 function key(n, z)
     if n == 2 and z == 1 then -- K2 switches to Loop section
@@ -396,4 +368,33 @@ function grid_redraw()
     end
 
     g:refresh() -- Send the LED buffer to the grid
+end
+
+function init()
+    
+    params:add{
+        type = "option",
+        id = "key",
+        name = "Key",
+        options = musicutil.NOTE_NAMES,
+        default = 3
+      }
+      
+      params:add{
+        type = "option",
+        id = "mode",
+        name = "Mode",
+        options = scale_names,
+        default = 5,
+      }
+
+    nb:init()
+    for i = 1, #trackers do
+        nb:add_param("voice_" .. i, "voice_" .. i)
+    end
+    nb:add_player_params()
+
+    primary_lattice:start()
+    grid_redraw()
+
 end
