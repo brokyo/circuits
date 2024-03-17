@@ -1,5 +1,7 @@
 # Quad Polyphonic Tracker for Norns and Grid
 
+![Script Map](script_map.jpg "Grid Map")
+
 ### Quickstart
 #### Navigation
 - Grid broken into two core sections: Composition Panel and Control Panel
@@ -17,3 +19,4 @@
 ### Other Things To Know
 - Voices selected in Settings
 - Holding the active tracker button in `Tracker Selection` and pressing a step allows you to jump directly to editing that step
+
