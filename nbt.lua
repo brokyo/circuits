@@ -48,7 +48,6 @@ local MINIMAP_END_ROW = 6
 local PLAYBACK_STATUS_ROW = 7
 local TRACKER_SELECTION_ROW = 8
 
-
 function createTracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
     local MAX_STEPS = 24 
     local tracker = {
@@ -116,14 +115,14 @@ for i = 1, #trackers do
     }
 end
 
--- Function to change the active tracker
+-- Logic for changing the active tracker
 function change_active_tracker(trackerIndex)
     active_tracker_index = trackerIndex
     grid_redraw()
     redraw()
 end
 
--- Function to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
+-- Logic to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
 function update_tracker_length(x, y)
     local lengthOffset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
     trackers[active_tracker_index].length = lengthOffset
@@ -131,25 +130,34 @@ function update_tracker_length(x, y)
     redraw()
 end
 
--- Logic for handling key pressed on the control panel
+-- Logic to change playback state
+function toggle_tracker_playback(tracker_index)
+    local tracker_to_change = trackers[tracker_index]
+    tracker_to_change.playing = not tracker_to_change.playing -- Flip the playback status
+    -- And reset position to zero if we're stopping
+    if not tracker_to_change.playing then
+        tracker_to_change.current_position = 0
+    end
+    redraw()
+    grid_redraw()
+end
+
+-- Logic for handling key pressed on the control panel (columns 13 > 16)
 function handle_control_column_press(x, y, pressed)
     if pressed == 0 then return end -- Ignore key releases
 
-    if y == TRACKER_SELECTION_ROW then
+    if y == TRACKER_SELECTION_ROW then -- Change active tracker by pressing corresponding key
         change_active_tracker(x - CONTROL_COLUMNS_START + 1)
-    elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then
+    elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then -- Change tracker length by pressing final step
         update_tracker_length(x, y)
-    elseif y == PLAYBACK_STATUS_ROW then
-        -- Toggle the playing state for the tracker corresponding to the pressed key
-        local trackerIndex = x - CONTROL_COLUMNS_START + 1
-        if trackerIndex >= 1 and trackerIndex <= #trackers then
-            trackers[trackerIndex].playing = not trackers[trackerIndex].playing
-            -- Reset the current position if we stop the tracker
-            if not trackers[trackerIndex].playing then
-                trackers[trackerIndex].current_position = 0
-            end
-            grid_redraw()
-        end
+    elseif y == PLAYBACK_STATUS_ROW then -- Toggle playback status
+        toggle_tracker_playback(x - CONTROL_COLUMNS_START + 1)
+        -- trackers[trackerIndex].playing = not trackers[trackerIndex].playing
+        -- -- Reset the current_position to start if stopping
+        -- if not trackers[trackerIndex].playing then
+        --     trackers[trackerIndex].current_position = 0
+        -- end
+        -- grid_redraw()
     end
 end
 
@@ -183,17 +191,6 @@ function g.key(x, y, pressed)
     end
 end
 
-
-function toggle_playback()
-    local active_tracker = trackers[active_tracker_index]
-    active_tracker.playing = not active_tracker.playing
-    if not active_tracker.playing then
-        active_tracker.current_position = 0
-    end
-
-    redraw()
-    grid_redraw()
-end
 
 function key(n, z)
     if n == 2 and z == 1 then -- K2 switches to Loop section
