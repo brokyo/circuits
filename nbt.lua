@@ -6,44 +6,45 @@ local nb = require "nb/lib/nb"
 local musicutil = require "musicutil"
 local lattice = require "lattice"
 
-local scale_names = {} -- A bit of a hack to get the scale names into a usable format for setting params
+local scale_names = {} -- Table to hold scale names so they're usable in the setting params
 for i = 1, #musicutil.SCALES do
     table.insert(scale_names, musicutil.SCALES[i].name) 
 end
 
 local g = grid.connect()
 
-local inactive_light = 2
-local dim_light = 3
-local medium_light = 5
-local high_light = 10
-
-function index_of(tbl, value)
+function index_of(tbl, value) -- Helper function to get an items index. Used throughout
     for i, v in ipairs(tbl) do
         if v == value then
             return i
         end
     end
-    return nil -- Return nil if the value is not found
+    return nil
 end
 
+-- Grid lighting configuration
+local inactive_light = 2
+local dim_light = 3
+local medium_light = 5
+local high_light = 10
+
+-- UI variables
 local active_tracker_index = 1 -- Manage editable state on screen and grid
 local active_window_start = 1 -- Manage the editable window on the grid 
 
-function createTracker(voice_id, active_length, root_octave)
-    local MAX_STEPS = 24  -- Maximum possible steps for a tracker
+function createTracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
+    local MAX_STEPS = 24 
     local tracker = {
         voice_id = voice_id,
         playing = false,
         current_position = 0,
-        length = active_length,  -- Active segment length
+        length = active_length,  -- Number of steps (of MAX_STEPS) to be played 
         steps = {},
         root_octave = root_octave
     }
     
     -- Initialize steps with default values
     for i = 1, MAX_STEPS do
-        -- Default step configuration can be adjusted as needed
         table.insert(tracker.steps, {degrees = {1}, velocity = 0.5, swing = 50, division = 1/3})
     end
     
@@ -51,13 +52,13 @@ function createTracker(voice_id, active_length, root_octave)
 end
 
 local trackers = {
-    createTracker(nil, 8, 4),  -- Tracker with 8 active steps out of 24
-    createTracker(nil, 12, 4), -- Tracker with 12 active steps out of 24
-    createTracker(nil, 16, 4), -- Tracker with 16 active steps out of 24
-    createTracker(nil, 24, 4)  -- Tracker with all 24 steps active
+    createTracker(nil, 8, 4),
+    createTracker(nil, 12, 4),
+    createTracker(nil, 16, 4),
+    createTracker(nil, 24, 4)
 }
 
-function build_scale(root_octave)
+function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
     local root_note = (root_octave * 12) + params:get("key") - 1 -- Get the MIDI note for the scale root. Adjust by 1 due to Lua indexing
     local scale = musicutil.generate_scale(root_note, params:get("mode"), 2)
  
