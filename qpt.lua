@@ -39,7 +39,7 @@ local loop_selected_param = 1 -- Index to navigate between parameters in the loo
 local step_selected_param = 1 -- Index to navigate between parameters in the step section
 
 local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
-local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4"} -- Names as strings for showing in param list
+local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
 
 -- Constants to separate the control panel
 local CONTROL_COLUMNS_START = 13
@@ -68,7 +68,7 @@ function createTracker(voice_id, active_length, root_octave) -- Helper function 
     
     -- Initialize steps with default values
     for i = 1, MAX_STEPS do
-        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/3})
+        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/3, duration = 1/3})
     end
     
     return tracker
@@ -112,7 +112,7 @@ for i = 1, #trackers do
                     for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
                         local note = scale_notes[degree] -- And match it to the appropriate note in the scale
                         local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                        player:play_note(note, current_step.velocity, 1) -- And play the note
+                        player:play_note(note, current_step.velocity, current_step.duration) -- And play the note
                     end
                 end
                 grid_redraw()
@@ -268,7 +268,7 @@ function enc(n, d)
         end
     elseif active_section == "step" then
         if n == 2 then -- E2 to select parameter to edit
-            step_selected_param = util.clamp(step_selected_param + d, 1, 4)
+            step_selected_param = util.clamp(step_selected_param + d, 1, 5)
             redraw()
         elseif n == 3 then -- E3 to modify the selected parameter
             local step = trackers[active_tracker_index].steps[selected_step]
@@ -282,6 +282,10 @@ function enc(n, d)
                 local current_division_index = index_of(division_options, step.division)
                 local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
                 step.division = division_options[new_division_index]
+            elseif step_selected_param == 5 then -- Modify duration
+                local current_duration_index = index_of(division_options, step.duration)
+                local new_duration_index = util.clamp(current_duration_index + d, 1, #division_options)
+                step.duration = division_options[new_duration_index]
             end
             redraw()
         end
@@ -329,8 +333,8 @@ function redraw()
     elseif active_section == "step" then
         -- Draw parameters for the selected step
         local step = trackers[active_tracker_index].steps[selected_step]
-        local param_names = {"Step", "Velocity", "Swing", "Division"}
-        local param_values = {tostring(selected_step), tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)]}
+        local param_names = {"Step", "Velocity", "Swing", "Division", "Duration (steps)"}
+        local param_values = {tostring(selected_step), tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)], division_option_names[index_of(division_options, step.duration)]}
 
         for i, param in ipairs(param_names) do
             screen.level(i == step_selected_param and 15 or 5) -- Highlight the active parameter
