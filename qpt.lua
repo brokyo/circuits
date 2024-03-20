@@ -95,7 +95,7 @@ local trackers = {
 
 function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
     local root_note = ((root_octave - 1) * 12) + params:get("key") - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
-    local scale = musicutil.generate_scale(root_note, params:get("mode"), 4)
+    local scale = musicutil.generate_scale(root_note, params:get("mode"), 3)
  
     return scale
 end
@@ -220,17 +220,38 @@ function handle_control_column_press(x, y, pressed)
     end
 end
 
+-- Logic for changing the octave on the grid to allow the user to play across three octaves
+function hanlde_octave_change(x, y, pressed)
+    if pressed == 0 then return end -- Ignore key releases
+
+    if x == 1 then
+        octave_on_grid = -1
+        redraw()
+        grid_redraw()
+    elseif x == 2 then
+        octave_on_grid = 0
+        redraw()
+        grid_redraw()
+    elseif x == 3 then
+        octave_on_grid = 1
+        redraw()
+        grid_redraw()
+    end
+end
+
 function g.key(x, y, pressed)    
     if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then
         handle_control_column_press(x, y, pressed)
+    elseif y == 8 then
+        hanlde_octave_change(x, y, pressed)
     else
         local working_tracker = trackers[active_tracker_index]
         local adjusted_x = x + active_window_start - 1
 
         -- Invert y-coordinate to match the horizontal layout and adjust for octave_on_grid
-        local degree = ((octave_on_grid + 1) * 8) + (9 - y) -- Inverting y by using (9 - y)
+        local degree = ((octave_on_grid + 1) * 7) + (8 - y) -- Inverting y by using (9 - y)
 
-        if pressed == 1 and adjusted_x <= 24 then
+        if pressed == 1 and adjusted_x <= 21 then
             local index = nil
             for i, v in ipairs(working_tracker.steps[adjusted_x].degrees) do
                 if v == degree then
@@ -382,8 +403,8 @@ function grid_redraw()
 
 
     -- Define the adjusted degree range currently on grid
-    local adjusted_degree_start = ((octave_on_grid + 1) * 8) + 1
-    local adjusted_degree_end = adjusted_degree_start + 7
+    local adjusted_degree_start = ((octave_on_grid + 1) * 7) + 1
+    local adjusted_degree_end = adjusted_degree_start + 6
 
     -- Draw Tracker
     for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
@@ -391,15 +412,15 @@ function grid_redraw()
         local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
 
         if step == working_tracker.current_position then
-            for y = 1, 8 do -- Grid height for degrees
+            for y = 1, 7 do -- Grid height for degrees
                 g:led(grid_step, y, dim_light)
             end
         end
                 
         for _, active_degree in ipairs(working_tracker.steps[step].degrees or {}) do -- Grab the table of active degrees for this step    
             if is_in_range(active_degree, adjusted_degree_start, adjusted_degree_end) then -- Check if the degree's in the visible range based on octave_on_grid
-                local mapped_degree = (active_degree - 1) % 8 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
-                local mapped_grid_y = 9 - mapped_degree
+                local mapped_degree = (active_degree - 1) % 7 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
+                local mapped_grid_y = 8 - mapped_degree
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, high_light) -- If it is mark it with the highest brightness
@@ -407,8 +428,8 @@ function grid_redraw()
                     g:led(grid_step, mapped_grid_y, medium_light)
                 end
             else -- Otherwise mark it as active but out of range
-                local mapped_degree = (active_degree - 1) % 8 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
-                local mapped_grid_y = 9 - mapped_degree
+                local mapped_degree = (active_degree - 1) % 7 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
+                local mapped_grid_y = 8 - mapped_degree
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, medium_light) -- Mark it with the highest brightness
@@ -449,6 +470,16 @@ function grid_redraw()
     for i = 1, #trackers do
         local playbackLight = trackers[i].playing and high_light or 0
         g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playbackLight)
+    end
+
+    -- Octave control keys lighting logic
+    local octave_keys = {-1, 0, 1} -- Matches the possible values of octave_on_grid
+    for i, octave_key in ipairs(octave_keys) do
+        if octave_on_grid == octave_key then
+            g:led(i, 8, medium_light) -- Active key with medium_light
+        else
+            g:led(i, 8, dim_light) -- Inactive keys with dim_light
+        end
     end
 
     g:refresh() -- Send the LED buffer to the grid
