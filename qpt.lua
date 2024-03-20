@@ -424,8 +424,10 @@ function grid_redraw()
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, high_light) -- If it is mark it with the highest brightness
-                else 
+                elseif step < working_tracker.length then
                     g:led(grid_step, mapped_grid_y, medium_light)
+                else
+                    g:led(grid_step, mapped_grid_y, dim_light)
                 end
             else -- Otherwise mark it as active but out of range
                 local mapped_degree = (active_degree - 1) % 7 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
@@ -433,11 +435,13 @@ function grid_redraw()
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, medium_light) -- Mark it with the highest brightness
-                else
+                elseif step < working_tracker.length then
                     g:led(grid_step, mapped_grid_y, dim_light)
+                else
+                    g:led(grid_step, mapped_grid_y, 1)
+                end
             end
         end
-    end
 
     -- Highlight the 12 steps in the active window  length of the active tracker
     for y = MINIMAP_START_ROW, MINIMAP_END_ROW do
