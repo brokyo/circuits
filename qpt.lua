@@ -14,7 +14,10 @@ end
 
 local g = grid.connect()
 
-function index_of(tbl, value) -- Helper function to get an items index. Used throughout
+---------------------------
+-- Some helper functions --
+---------------------------
+function index_of(tbl, value) 
     for i, v in ipairs(tbl) do
         if v == value then
             return i
@@ -23,10 +26,17 @@ function index_of(tbl, value) -- Helper function to get an items index. Used thr
     return nil
 end
 
+function is_in_range(value, min, max)
+    return value >= min and value <= max
+end
+
+function map_int(value, min, max)
+    return math.floor(math.min(math.max(value, min), max) + 0.5)
+end
 -- Grid lighting configuration
 local inactive_light = 2
 local dim_light = 3
-local medium_light = 5
+local medium_light = 6
 local high_light = 10
 
 -- UI variables
@@ -70,7 +80,7 @@ function create_tracker(voice_id, active_length, root_octave) -- Helper function
     
     -- Initialize steps with default values
     for i = 1, MAX_STEPS do
-        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/3, duration = 1/3})
+        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/4, duration = 1/4})
     end
     
     return tracker
@@ -370,38 +380,40 @@ function grid_redraw()
 
     g:all(0) -- Zero out grid
 
-    -- Calculate the grid's degree range based on octave_on_grid
-    local degree_start = ((octave_on_grid + 1) * 8) + 1
-    local degree_end = degree_start + 7
+
+    -- Define the adjusted degree range currently on grid
+    local adjusted_degree_start = ((octave_on_grid + 1) * 8) + 1
+    local adjusted_degree_end = adjusted_degree_start + 7
 
     -- Draw Tracker
     for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
         if step > 24 then print("step exceeds length") break end -- Catch errors
-        local grid_step = step - active_window_start + 1 -- Adjusted step for drawing degrees on the grid
-        for degree = 1, 8 do -- Iterate through each degree in the step
-            local grid_y = 9 - degree -- Invert the y-coordinate
+        local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
 
-            local visible_degree = degree_start + (degree - 1) -- Calculate the degrees visible on the grid based on octave_on_grid
-            -- local extended_degree = //// -- TODO:
-            local is_visible_degree = false -- Flag to identify a degree is within the grid range
-            local is_extended_degree = false -- Flag to idetify a degree is out of grid range but active
-
-            -- Check if the current degree is among the active degrees for this step
-            for _, active_degree in ipairs(working_tracker.steps[step].degrees or {}) do
-                if active_degree == visible_degree then
-                    is_visible_degree = true
-                    break
-                elseif active_degree == extended_degree then
-                    is_extended_degree = true
-                    break
-                end
+        if step == working_tracker.current_position then
+            for y = 1, 8 do -- Grid height for degrees
+                g:led(grid_step, y, dim_light)
             end
+        end
+                
+        for _, active_degree in ipairs(working_tracker.steps[step].degrees or {}) do -- Grab the table of active degrees for this step    
+            if is_in_range(active_degree, adjusted_degree_start, adjusted_degree_end) then -- Check if the degree's in the visible range based on octave_on_grid
+                local mapped_degree = (active_degree - 1) % 8 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
+                local mapped_grid_y = 9 - mapped_degree
 
-            -- Determine the light intensity based on the current step (within active window on grid), position, and if the degree is active
-            if step == working_tracker.current_position and step >= active_window_start and step <= active_window_start + 11 then
-                g:led(grid_step, grid_y, is_visible_degree and high_light or dim_light)
-            elseif is_visible_degree then
-                g:led(grid_step, grid_y, step > working_tracker.length and inactive_light or medium_light)
+                if step == working_tracker.current_position then -- Check if it's in the current step
+                    g:led(grid_step, mapped_grid_y, high_light) -- If it is mark it with the highest brightness
+                else 
+                    g:led(grid_step, mapped_grid_y, medium_light)
+                end
+            else -- Otherwise mark it as active but out of range
+                local mapped_degree = (active_degree - 1) % 8 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
+                local mapped_grid_y = 9 - mapped_degree
+
+                if step == working_tracker.current_position then -- Check if it's in the current step
+                    g:led(grid_step, mapped_grid_y, medium_light) -- Mark it with the highest brightness
+                else
+                    g:led(grid_step, mapped_grid_y, dim_light)
             end
         end
     end
@@ -413,7 +425,7 @@ function grid_redraw()
             if lengthValue <= trackers[active_tracker_index].length then
                 -- Check if the current minimap position corresponds to the active step
                 if lengthValue == working_tracker.current_position then
-                    g:led(x, y, 6) -- Use high_light for the active step
+                    g:led(x, y, medium_light) -- Use high_light for the active step
                 else
                     g:led(x, y, dim_light) -- Use a lower intensity for other steps
                 end
@@ -440,6 +452,7 @@ function grid_redraw()
     end
 
     g:refresh() -- Send the LED buffer to the grid
+    end
 end
 
 function init()
