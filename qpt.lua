@@ -41,6 +41,8 @@ local step_selected_param = 1 -- Index to navigate between parameters in the ste
 local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
 local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
 
+local octave_on_grid = 0 -- Index to allow octave selection on the grid
+
 -- Constants to separate the control panel
 local CONTROL_COLUMNS_START = 13
 local CONTROL_COLUMNS_END = 16
@@ -55,7 +57,7 @@ local key_states = {
     minimap = {}
 }
 
-function createTracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
+function create_tracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
     local MAX_STEPS = 24 
     local tracker = {
         voice_id = voice_id,
@@ -75,15 +77,15 @@ function createTracker(voice_id, active_length, root_octave) -- Helper function 
 end
 
 local trackers = {
-    createTracker(nil, 8, 4),
-    createTracker(nil, 12, 4),
-    createTracker(nil, 16, 4),
-    createTracker(nil, 24, 4)
+    create_tracker(nil, 8, 4),
+    create_tracker(nil, 12, 4),
+    create_tracker(nil, 16, 4),
+    create_tracker(nil, 24, 4)
 }
 
 function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
-    local root_note = (root_octave * 12) + params:get("key") - 1 -- Get the MIDI note for the scale root. Adjust by 1 due to Lua indexing
-    local scale = musicutil.generate_scale(root_note, params:get("mode"), 2)
+    local root_note = ((root_octave - 1) * 12) + params:get("key") - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
+    local scale = musicutil.generate_scale(root_note, params:get("mode"), 4)
  
     return scale
 end
@@ -125,6 +127,7 @@ end
 -- Logic for changing the active tracker
 function change_active_tracker(trackerIndex)
     active_tracker_index = trackerIndex
+    octave_on_grid = 0 -- Reset the grid to the new tracker's root
     grid_redraw()
     redraw()
 end
@@ -208,16 +211,16 @@ function handle_control_column_press(x, y, pressed)
 end
 
 function g.key(x, y, pressed)    
-    if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then -- Catch key presses in the control panel and handle them with distinct logic
+    if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then
         handle_control_column_press(x, y, pressed)
-    else -- Otherwise treat them as edits to the tracker (LATER: Break this logic out as well)
-        local degree = 9 - y -- Invert the y-coordinate to match the horizontal layout
+    else
         local working_tracker = trackers[active_tracker_index]
+        local adjusted_x = x + active_window_start - 1
 
-        local adjusted_x = x + active_window_start - 1 -- Adjust x based on the active_window_start
+        -- Invert y-coordinate to match the horizontal layout and adjust for octave_on_grid
+        local degree = ((octave_on_grid + 1) * 8) + (9 - y) -- Inverting y by using (9 - y)
 
-
-        if pressed == 1 and adjusted_x <= 24 then -- When a degree is pressed and the associated step is less than the max sequence length
+        if pressed == 1 and adjusted_x <= 24 then
             local index = nil
             for i, v in ipairs(working_tracker.steps[adjusted_x].degrees) do
                 if v == degree then
@@ -225,12 +228,12 @@ function g.key(x, y, pressed)
                     break
                 end
             end
-            if index then -- If it is, remove it
+            if index then
                 table.remove(working_tracker.steps[adjusted_x].degrees, index)
-                print("Degree " .. degree .. " removed from step " .. x)
-            else -- If it is not, add it
+                print("Degree " .. degree .. " removed from step " .. adjusted_x)
+            else
                 table.insert(working_tracker.steps[adjusted_x].degrees, degree)
-                print("Degree " .. degree .. " added to step " .. x)
+                print("Degree " .. degree .. " added to step " .. adjusted_x)
             end
             grid_redraw()
         end
@@ -255,14 +258,15 @@ function enc(n, d)
         grid_redraw()
     elseif active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
-            loop_selected_param = util.clamp(loop_selected_param + d, 1, 2) -- Three parameters: play state, octave, length
+            loop_selected_param = util.clamp(loop_selected_param + d, 1, 2) -- Two parameters: Root Octave, Octave On Grid
             redraw()
         elseif n == 3 then -- E3 modifies the selected parameter
             if loop_selected_param == 1 then -- Change root octave
                 trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
                 redraw()
             elseif loop_selected_param == 2 then -- Change loop length
-                trackers[active_tracker_index].length = util.clamp(trackers[active_tracker_index].length + d, 1, 24)
+                octave_on_grid = util.clamp(octave_on_grid + d, -1, 1)
+                grid_redraw()
                 redraw()
             end
         end
@@ -319,10 +323,21 @@ function redraw()
     screen.text_center("Step (k3)")
 
     if active_section == "loop" then
-        local param_names = {"Octave", "Length"}
+        local param_names = {"Octave", "Octave on Grid"}
+        local octave_on_grid_display = "root"
+
+        -- Check the octave_on_grid int and show a string in the UI 
+        if octave_on_grid == -1 then
+            octave_on_grid_display = "root - 1"
+        elseif octave_on_grid == 1 then
+            octave_on_grid_display = "root + 1"
+        else
+            local octave_on_grid_display = "root"
+        end
+
         local param_values = {
             tostring(trackers[active_tracker_index].root_octave),
-            tostring(trackers[active_tracker_index].length)
+            octave_on_grid_display
         }
         
         for i, param in ipairs(param_names) do
@@ -355,27 +370,37 @@ function grid_redraw()
 
     g:all(0) -- Zero out grid
 
+    -- Calculate the grid's degree range based on octave_on_grid
+    local degree_start = ((octave_on_grid + 1) * 8) + 1
+    local degree_end = degree_start + 7
+
     -- Draw Tracker
     for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
         if step > 24 then print("step exceeds length") break end -- Catch errors
         local grid_step = step - active_window_start + 1 -- Adjusted step for drawing degrees on the grid
         for degree = 1, 8 do -- Iterate through each degree in the step
             local grid_y = 9 - degree -- Invert the y-coordinate
-            local active_degrees = working_tracker.steps[step].degrees -- Grab the table of degrees in the step
-            local is_active_degree = false -- Flag to identify correct illumination level 
+
+            local visible_degree = degree_start + (degree - 1) -- Calculate the degrees visible on the grid based on octave_on_grid
+            -- local extended_degree = //// -- TODO:
+            local is_visible_degree = false -- Flag to identify a degree is within the grid range
+            local is_extended_degree = false -- Flag to idetify a degree is out of grid range but active
 
             -- Check if the current degree is among the active degrees for this step
-            for _, active_degree in ipairs(active_degrees or {}) do
-                if active_degree == degree then
-                    is_active_degree = true
+            for _, active_degree in ipairs(working_tracker.steps[step].degrees or {}) do
+                if active_degree == visible_degree then
+                    is_visible_degree = true
+                    break
+                elseif active_degree == extended_degree then
+                    is_extended_degree = true
                     break
                 end
             end
 
             -- Determine the light intensity based on the current step (within active window on grid), position, and if the degree is active
             if step == working_tracker.current_position and step >= active_window_start and step <= active_window_start + 11 then
-                g:led(grid_step, grid_y, is_active_degree and high_light or dim_light)
-            elseif is_active_degree then
+                g:led(grid_step, grid_y, is_visible_degree and high_light or dim_light)
+            elseif is_visible_degree then
                 g:led(grid_step, grid_y, step > working_tracker.length and inactive_light or medium_light)
             end
         end
