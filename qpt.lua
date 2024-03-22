@@ -67,10 +67,13 @@ local key_states = {
     minimap = {}
 }
 
+local nb_voices = {} -- Table of options for tracker voice
+
 function create_tracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
     local MAX_STEPS = 24 
     local tracker = {
         voice_id = voice_id,
+        voice_index = 1,
         playing = false,
         current_position = 0,
         length = active_length,  -- Number of steps (of MAX_STEPS) to be played 
@@ -289,13 +292,18 @@ function enc(n, d)
         grid_redraw()
     elseif active_section == "loop" then
         if n == 2 then -- E2 navigates between parameters in the Loop section
-            loop_selected_param = util.clamp(loop_selected_param + d, 1, 2) -- Two parameters: Root Octave, Octave On Grid
+            loop_selected_param = util.clamp(loop_selected_param + d, 1, 3) -- Two parameters: Voice, Root Octave, Octave On Grid
             redraw()
         elseif n == 3 then -- E3 modifies the selected parameter
-            if loop_selected_param == 1 then -- Change root octave
+            if loop_selected_param == 1 then -- Change n.b voice
+                trackers[active_tracker_index].voice_index = util.clamp(trackers[active_tracker_index].voice_index + d, 1, #nb_voices)
+                print(trackers[active_tracker_index].voice_index)
+                params:set("voice_" .. active_tracker_index, trackers[active_tracker_index].voice_index)
+                redraw()
+            elseif loop_selected_param == 2 then -- Change root octave
                 trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
                 redraw()
-            elseif loop_selected_param == 2 then -- Change loop length
+            elseif loop_selected_param == 3 then -- Change root visualized on grid
                 octave_on_grid = util.clamp(octave_on_grid + d, -1, 1)
                 grid_redraw()
                 redraw()
@@ -354,7 +362,7 @@ function redraw()
     screen.text_center("Step (k3)")
 
     if active_section == "loop" then
-        local param_names = {"Octave", "Octave on Grid"}
+        local param_names = {"Voice", "Octave", "Octave on Grid"}
         local octave_on_grid_display = "root"
 
         -- Check the octave_on_grid int and show a string in the UI 
@@ -367,6 +375,7 @@ function redraw()
         end
 
         local param_values = {
+            tostring(nb_voices[trackers[active_tracker_index].voice_index]),
             tostring(trackers[active_tracker_index].root_octave),
             octave_on_grid_display
         }
@@ -513,6 +522,12 @@ function init()
         nb:add_param("voice_" .. i, "voice_" .. i)
     end
     nb:add_player_params()
+
+    local voice_lookup = params:lookup_param("voice_1")
+
+    for i, option in ipairs(voice_lookup.options) do
+        nb_voices[i] = option
+    end
 
     primary_lattice:start()
     grid_redraw()
