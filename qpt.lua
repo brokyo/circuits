@@ -501,6 +501,8 @@ end
 
 function init()
     
+    params:add_separator("dawn_title", "Dawn")
+    params:add_separator("tonality", "Tonality")
     params:add{
         type = "option",
         id = "key",
@@ -518,6 +520,8 @@ function init()
       }
 
     nb:init()
+
+    params:add_separator("voices", "N.B Voices")
     for i = 1, #trackers do
         nb:add_param("voice_" .. i, "voice_" .. i)
     end
