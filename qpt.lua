@@ -52,16 +52,12 @@ local active_window_start = 1 -- Manage the editable window on the grid
 local active_config_index = 1 -- Variable to identify and control the active section of the screen
 local config_options = {"Global", "Wave", "Voice", "Step"} -- Section names for UI
 local selected_step = 1 -- Individual step to edit
-local global_selected_param = 1 -- Index to navigate between parameters in the global section
-local loop_selected_param = 1 -- Index to navigate between parameters in the loop section
-local step_selected_param = 1 -- Index to navigate between parameters in the step section
-local wave_selected_param = 1
 local config_selected_param = 1
 
 local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8} -- Possible step divisions
 local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
 
-local clock_modifider_options = {1/8, 1/4, 1/2, 1, 2, 4, 8}
+local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8}
 local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
 
 local octave_on_grid = 0 -- Index to allow octave selection on the grid
@@ -128,8 +124,8 @@ local trackers = {
 }
 
 function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
-    local root_note = ((root_octave - 1) * 12) + params:get("key") - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
-    local scale = musicutil.generate_scale(root_note, params:get("mode"), 3)
+    local root_note = ((root_octave - 1) * 12) + tonic_index - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
+    local scale = musicutil.generate_scale(root_note, scale_index, 3)
  
     return scale
 end
@@ -144,26 +140,27 @@ for i = 1, #trackers do
     sequencers[i] = primary_lattice:new_sprocket{
         action = function()
             if tracker.playing then -- Check if the tracker is playing
-
                 -- TODO: This works, but I've got both current_position and loop_count zero-indexed and I worry there will be reprecussions. Revisit this.
                 tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
                 if tracker.current_position == 1 then
                     tracker.loop_count = tracker.loop_count + 1
                 end
-
+                
                 local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
-
+                
                 local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
                 local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
-                
-                sequencers[i]:set_division(current_step.division) -- Set the division for the current step
+
+                local modified_division = tracker.clock_modifider * current_step.duration
+               
+                sequencers[i]:set_division(modified_division) -- Set the division for the current step
                 sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
 
                 if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
                     for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
                         local note = scale_notes[degree] -- And match it to the appropriate note in the scale
                         local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                        player:play_note(note, current_step.velocity, current_step.duration) -- And play the note
+                        player:play_note(note, current_step.velocity, modified_division) -- And play the note
                     end
                 end
                 grid_redraw()
