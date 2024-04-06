@@ -1,8 +1,8 @@
--- TBD
+-- Dawn/Dusk
 -- Quad polyphonic tracker
 -- A work in progess
 
--- -- Core libraries
+-- Core libraries
 local nb = require "nb/lib/nb"
 local musicutil = require "musicutil"
 local lattice = require "lattice"
@@ -33,6 +33,11 @@ end
 function map_int(value, min, max)
     return math.floor(math.min(math.max(value, min), max) + 0.5)
 end
+
+-- Global Config
+local scale_index = 1
+local tonic_index = 3
+
 -- Grid lighting configuration
 local inactive_light = 2
 local dim_light = 3
@@ -40,18 +45,31 @@ local medium_light = 6
 local high_light = 10
 
 -- UI variables
+local active_ui_pane = 2
 local active_tracker_index = 1 -- Manage editable state on screen and grid
 local active_window_start = 1 -- Manage the editable window on the grid 
 
-local active_section = "loop" -- Vairable to identify and control the active section of the screen
+local active_config_index = 1 -- Variable to identify and control the active section of the screen
+local config_options = {"Global", "Wave", "Voice", "Step"} -- Section names for UI
 local selected_step = 1 -- Individual step to edit
+local global_selected_param = 1 -- Index to navigate between parameters in the global section
 local loop_selected_param = 1 -- Index to navigate between parameters in the loop section
 local step_selected_param = 1 -- Index to navigate between parameters in the step section
+local wave_selected_param = 1
+local config_selected_param = 1
 
-local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4} -- Possible step divisions
+local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8} -- Possible step divisions
 local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
 
+local clock_modifider_options = {1/8, 1/4, 1/2, 1, 2, 4, 8}
+local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
+
 local octave_on_grid = 0 -- Index to allow octave selection on the grid
+
+-- Scrolling Controls
+local scroll_index = 1 -- Track the first visible item in a long list
+local max_items_on_screen = 6 
+
 
 -- Constants to separate the control panel
 local CONTROL_COLUMNS_START = 13
@@ -78,12 +96,25 @@ function create_tracker(voice_id, active_length, root_octave) -- Helper function
         current_position = 0,
         length = active_length,  -- Number of steps (of MAX_STEPS) to be played 
         steps = {},
-        root_octave = root_octave
+        loop_count = 0,
+        root_octave = root_octave,
+        clock_modifider = 1,
+        phase_active = false,
+        rising = {
+            start = 1,
+            stop = 24,
+            cycles = 1
+        },
+        rising = {
+            start = 1,
+            stop = 24,
+            cycles = 1
+        }
     }
     
     -- Initialize steps with default values
     for i = 1, MAX_STEPS do
-        table.insert(tracker.steps, {degrees = {}, velocity = 0.5, swing = 50, division = 1/4, duration = 1/4})
+        table.insert(tracker.steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
     end
     
     return tracker
@@ -113,7 +144,12 @@ for i = 1, #trackers do
     sequencers[i] = primary_lattice:new_sprocket{
         action = function()
             if tracker.playing then -- Check if the tracker is playing
+
+                -- TODO: This works, but I've got both current_position and loop_count zero-indexed and I worry there will be reprecussions. Revisit this.
                 tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
+                if tracker.current_position == 1 then
+                    tracker.loop_count = tracker.loop_count + 1
+                end
 
                 local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
 
@@ -135,14 +171,6 @@ for i = 1, #trackers do
         end,
         division = 1
     }
-end
-
--- Logic for changing the active tracker
-function change_active_tracker(trackerIndex)
-    active_tracker_index = trackerIndex
-    octave_on_grid = 0 -- Reset the grid to the new tracker's root
-    grid_redraw()
-    redraw()
 end
 
 -- Logic to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
@@ -179,7 +207,7 @@ end
 
 function step_edit_shortcut(tracker_index, minimap_key)
     if minimap_key == nil then return end -- Exit function if there's no minimap_key pressed
-    active_section = "step"
+    active_config_index = 3
     active_tracker_index = tracker_index
     selected_step = minimap_key
     redraw()
@@ -276,128 +304,295 @@ end
 
 
 function key(n, z)
-    if n == 2 and z == 1 then -- K2 switches to Loop section
-        active_section = "loop"
+    if n == 2 and z == 1 then -- K2 switches to config pane
+        active_ui_pane = 1
         redraw()
-    elseif n == 3 and z == 1 then -- K3 switches to Step section 
-        active_section = "step"
+    elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
+        active_ui_pane = 2
         redraw()
     end
 end
 
+local navigation_selected_param = 1
+
+local navigation_parms_names = {
+    "wave",
+    "config"
+}
+
+local navigation_params_values = {
+    active_tracker_index,
+    active_config_index
+}
+
+-- Logic for changing the active tracker
+function change_active_tracker(new_tracker_index)
+    active_tracker_index = new_tracker_index
+    octave_on_grid = 0 -- Reset the grid to the new tracker's root
+    grid_redraw()
+    redraw()
+end
+
+function change_active_config(new_config_index)
+    active_config_index = new_config_index
+    grid_redraw()
+    redraw()
+end
+
+local param_names_table = {
+    -- Global
+    {
+        "Mode",
+        "Key",
+        "Tempo"
+    },
+    -- Wave
+    {
+        "Clock Mod"
+        -- "Phasing Active",
+        -- "Rising Start Step",
+        -- "Rising Stop Step"
+        -- "Rising Cycles",
+        -- "Falling Start Step",
+        -- "Falling Stop Step",
+        -- "Falling Cycles"
+    },
+    -- Loop
+    {
+        "Voice",
+        "Octave",
+        "Grid Oct Shift",
+    },
+    -- Step
+    {
+        "Step", 
+        "Velocity", 
+        "Swing", 
+        "Division", 
+        "Beats Sus"
+    }
+}
+
+function get_param_values_table()
+    return {
+        {
+            tostring(scale_names[scale_index]),
+            tostring(musicutil.NOTE_NAMES[tonic_index]),
+            tostring(params:get('clock_tempo')),
+        },
+        {
+            clock_modifider_options_names[index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)]
+        },
+        {
+            tostring(nb_voices[trackers[active_tracker_index].voice_index]),
+            tostring(trackers[active_tracker_index].root_octave),
+            tostring(octave_on_grid),
+        },
+        {
+            tostring(selected_step), 
+            tostring(trackers[active_tracker_index].steps[selected_step].velocity), 
+            tostring(trackers[active_tracker_index].steps[selected_step].swing), 
+            division_option_names[index_of(division_options, trackers[active_tracker_index].steps[selected_step].division)], 
+            division_option_names[index_of(division_options, trackers[active_tracker_index].steps[selected_step].duration)]
+        }
+    }
+end
 
 function enc(n, d)
-    if n == 1 then -- Encoder 1 adjusts the active window start in all modes
+    -- Encoder 1 adjusts the active window start in all modes
+    if n == 1 then 
         active_window_start = util.clamp(active_window_start + d, 1, 13) -- Ensures the window doesn't go beyond the steps. Adjusts up to step 13 to allow a full window of 12 steps.
         grid_redraw()
-    elseif active_section == "loop" then
-        if n == 2 then -- E2 navigates between parameters in the Loop section
-            loop_selected_param = util.clamp(loop_selected_param + d, 1, 3) -- Two parameters: Voice, Root Octave, Octave On Grid
-            redraw()
-        elseif n == 3 then -- E3 modifies the selected parameter
-            if loop_selected_param == 1 then -- Change n.b voice
-                trackers[active_tracker_index].voice_index = util.clamp(trackers[active_tracker_index].voice_index + d, 1, #nb_voices)
-                print(trackers[active_tracker_index].voice_index)
-                params:set("voice_" .. active_tracker_index, trackers[active_tracker_index].voice_index)
-                redraw()
-            elseif loop_selected_param == 2 then -- Change root octave
-                trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
-                redraw()
-            elseif loop_selected_param == 3 then -- Change root visualized on grid
-                octave_on_grid = util.clamp(octave_on_grid + d, -1, 1)
-                grid_redraw()
-                redraw()
+    end
+
+    ---------------------------------
+    -- Config Pane | Encoder Logic --
+    ---------------------------------
+    if active_ui_pane == 1 then
+        ------------
+        -- Global --
+        ------------
+        if active_config_index == 1 then
+            if n == 2 then
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[1]) -- Parameters: Mode, Key, Tempo, Section
+            elseif n == 3 then
+                if config_selected_param == 1 then
+                    scale_index = util.clamp(scale_index + d, 1, #scale_names)
+                elseif config_selected_param == 2 then
+                    tonic_index = util.clamp(tonic_index + d, 1, #musicutil.NOTE_NAMES)
+                elseif config_selected_param == 3 then
+                    params:delta("clock_tempo",d)
+                end
             end
-        end
-    elseif active_section == "step" then
-        if n == 2 then -- E2 to select parameter to edit
-            step_selected_param = util.clamp(step_selected_param + d, 1, 5)
-            redraw()
-        elseif n == 3 then -- E3 to modify the selected parameter
-            local step = trackers[active_tracker_index].steps[selected_step]
-            if step_selected_param == 1 then -- Navigate between steps
-                selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
-            elseif step_selected_param == 2 then -- Modify velocity
-                step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
-            elseif step_selected_param == 3 then -- Modify swing
-                step.swing = util.clamp(step.swing + d, 0, 100)
-            elseif step_selected_param == 4 then -- Modify division
-                local current_division_index = index_of(division_options, step.division)
-                local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
-                step.division = division_options[new_division_index]
-            elseif step_selected_param == 5 then -- Modify duration
-                local current_duration_index = index_of(division_options, step.duration)
-                local new_duration_index = util.clamp(current_duration_index + d, 1, #division_options)
-                step.duration = division_options[new_duration_index]
+        ----------
+        -- Wave --
+        ----------
+        elseif active_config_index == 2 then
+            if n == 2 then
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[2]) -- Parameters: Clock modifier 
+            elseif n == 3 then
+                if config_selected_param == 1 then
+                    local current_mod_index = index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)
+                    local new_clock_mod_index = util.clamp(current_mod_index + d, 1, #clock_modifider_options)
+                    trackers[active_tracker_index].clock_modifider = clock_modifider_options[new_clock_mod_index]           
+                end
             end
-            redraw()
+        ----=------
+        -- Voice --
+        -----------
+        elseif active_config_index == 3 then
+            if n == 2 then 
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[3]) -- Parameters: Voice, Root Octave, Octave On Grid
+            elseif n == 3 then
+                if config_selected_param == 1 then -- Change n.b voice
+                    trackers[active_tracker_index].voice_index = util.clamp(trackers[active_tracker_index].voice_index + d, 1, #nb_voices)
+                    params:set("voice_" .. active_tracker_index, trackers[active_tracker_index].voice_index)
+                elseif config_selected_param == 2 then -- Change root octave
+                    trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
+                elseif config_selected_param == 3 then -- Change root visualized on grid
+                    octave_on_grid = util.clamp(octave_on_grid + d, -1, 1)
+                end
+            end
+        ----------
+        -- Step --
+        ----------
+        elseif active_config_index == 4 then
+            if n == 2 then
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[4]) -- Parameters: Step, Velocity, Swing, Division, Duration
+            elseif n == 3 then -- E3 to modify the selected parameter
+                local step = trackers[active_tracker_index].steps[selected_step]
+                if config_selected_param == 1 then -- Navigate between steps
+                    selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
+                elseif config_selected_param == 2 then -- Modify velocity
+                    step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
+                elseif config_selected_param == 3 then -- Modify swing
+                    step.swing = util.clamp(step.swing + d, 0, 100)
+                elseif config_selected_param == 4 then -- Modify division
+                    local current_division_index = index_of(division_options, step.division)
+                    local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
+                    step.division = division_options[new_division_index]
+                elseif config_selected_param == 5 then -- Modify duration
+                    local current_duration_index = index_of(division_options, step.duration)
+                    local new_duration_index = util.clamp(current_duration_index + d, 1, #division_options)
+                    step.duration = division_options[new_duration_index]
+                end
+            end
         end
     end
+
+    -------------------------------------
+    -- Navigation Pane | Encoder Logic --
+    -------------------------------------
+    if active_ui_pane == 2 then
+        if n == 2 then
+            navigation_selected_param = util.clamp(navigation_selected_param + d, 1, 2)
+        elseif n == 3 then
+            if navigation_selected_param == 1 then
+                navigation_params_values[1] = util.clamp(navigation_params_values[1] + d, 1, #trackers)
+                change_active_tracker(navigation_params_values[1])
+            elseif navigation_selected_param == 2 then
+                navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, #config_options)
+                change_active_config(navigation_params_values[2])
+            end
+        end
+    end
+
+    redraw()
+    grid_redraw()
 end
+
+function draw_settings()
+    local is_active_pane = (active_ui_pane == 1)
+
+    local param_names = param_names_table[active_config_index]
+    local param_values = get_param_values_table()[active_config_index]
+
+    local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
+
+    for i = scroll_index, list_end do
+        local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
+        if not is_active_pane then
+            screen.level(2)
+        else
+            screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+        end
+        screen.move(2, y)
+        screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
+    end
+end
+
+function draw_navigation()
+    local is_active_pane = (active_ui_pane == 2)
+
+    screen.level(is_active_pane and 15 or 8)
+    screen.rect(84, 0, 44, 64)
+    screen.fill()
+    
+    -- Section Settings
+    screen.font_face(1)
+
+    -- Number
+    if is_active_pane and navigation_selected_param == 1 then
+        screen.level(0)
+    elseif is_active_pane and navigation_selected_param ~= 1 then
+        screen.level(2)
+    elseif not is_active_pane then
+        screen.level(0)
+    end
+    screen.font_size(16)
+    screen.move(103, 15)
+    if active_config_index == 1 then
+        screen.text_center("all")
+    else
+        screen.text_center(active_tracker_index)
+    end
+
+    -- Title
+    if is_active_pane and navigation_selected_param == 1 then
+        screen.level(0)
+    elseif is_active_pane and navigation_selected_param ~= 1 then
+        screen.level(4)
+    elseif not is_active_pane then
+        screen.level(2)
+    end
+    screen.font_size(8)
+    screen.move(105, 24)
+    screen.text_center("wave")
+
+
+    -- Section
+    if is_active_pane and navigation_selected_param == 2 then
+        screen.level(0)
+    elseif is_active_pane and navigation_selected_param ~= 2 then
+        screen.level(2)
+    elseif not is_active_pane then
+        screen.level(0)
+    end
+    screen.font_size(8)
+    screen.move(105, 46)
+    screen.text_center(config_options[active_config_index])
+
+    -- Title
+    if is_active_pane and navigation_selected_param == 2 then
+        screen.level(0)
+    elseif is_active_pane and navigation_selected_param ~= 2 then
+        screen.level(4)
+    elseif not is_active_pane then
+        screen.level(2)
+    end
+
+
+    screen.font_size(8)
+    screen.move(105, 56)
+    screen.text_center("config")
+    
+    screen.update()
+end 
 
 function redraw()
     screen.clear()
-
-    -- Mode Selector
-    -- Loop Edit
-    screen.rect(1, 54, 60, 10)    
-    if active_section == "loop" then
-        screen.level(6)
-    else
-        screen.level(1)
-    end
-    screen.stroke()
-    screen.move(32, 61)
-    screen.text_center("Loop (k2)")
-
-    -- Step Edit
-    screen.rect(67, 54, 60, 10)
-    if active_section == "step" then
-        screen.level(6)
-    else
-        screen.level(1)
-    end
-    screen.stroke()
-    screen.move(96, 61)
-    screen.text_center("Step (k3)")
-
-    if active_section == "loop" then
-        local param_names = {"Voice", "Octave", "Octave on Grid"}
-        local octave_on_grid_display = "root"
-
-        -- Check the octave_on_grid int and show a string in the UI 
-        if octave_on_grid == -1 then
-            octave_on_grid_display = "root - 1"
-        elseif octave_on_grid == 1 then
-            octave_on_grid_display = "root + 1"
-        else
-            local octave_on_grid_display = "root"
-        end
-
-        local param_values = {
-            tostring(nb_voices[trackers[active_tracker_index].voice_index]),
-            tostring(trackers[active_tracker_index].root_octave),
-            octave_on_grid_display
-        }
-        
-        for i, param in ipairs(param_names) do
-            screen.level(i == loop_selected_param and 15 or 5) -- Highlight the active parameter
-            screen.move(2, 10 + (i * 10))
-            screen.text(param .. ": " .. param_values[i])
-        end
-    elseif active_section == "step" then
-        -- Draw parameters for the selected step
-        local step = trackers[active_tracker_index].steps[selected_step]
-        local param_names = {"Step", "Velocity", "Swing", "Division", "Duration (steps)"}
-        local param_values = {tostring(selected_step), tostring(step.velocity), tostring(step.swing), division_option_names[index_of(division_options, step.division)], division_option_names[index_of(division_options, step.duration)]}
-
-        for i, param in ipairs(param_names) do
-            screen.level(i == step_selected_param and 15 or 5) -- Highlight the active parameter
-            screen.move(2, 0 + (i * 10))
-            screen.text(param .. ": " .. param_values[i])
-        end
-    end
-    screen.update()
+    draw_settings()
+    draw_navigation()
 end
 
 function grid_redraw()
@@ -500,25 +695,8 @@ function grid_redraw()
 end
 
 function init()
-    
+    print(clock.get_beat_sec())
     params:add_separator("dawn_title", "Dawn")
-    params:add_separator("tonality", "Tonality")
-    params:add{
-        type = "option",
-        id = "key",
-        name = "Key",
-        options = musicutil.NOTE_NAMES,
-        default = 3
-      }
-      
-      params:add{
-        type = "option",
-        id = "mode",
-        name = "Mode",
-        options = scale_names,
-        default = 5,
-      }
-
     nb:init()
 
     params:add_separator("voices", "N.B Voices")
@@ -534,6 +712,7 @@ function init()
     end
 
     primary_lattice:start()
+    redraw()
     grid_redraw()
 
 end
