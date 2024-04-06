@@ -40,9 +40,9 @@ local tonic_index = 3
 
 -- Grid lighting configuration
 local inactive_light = 2
-local dim_light = 3
-local medium_light = 6
-local high_light = 10
+local dim_light = 5
+local medium_light = 12
+local high_light = 15
 
 -- UI variables
 local active_ui_pane = 2
@@ -204,7 +204,7 @@ end
 
 function step_edit_shortcut(tracker_index, minimap_key)
     if minimap_key == nil then return end -- Exit function if there's no minimap_key pressed
-    active_config_index = 3
+    active_config_index = 4
     active_tracker_index = tracker_index
     selected_step = minimap_key
     redraw()
