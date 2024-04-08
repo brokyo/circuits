@@ -1,73 +1,116 @@
 -- Dawn/Dusk
--- Quad polyphonic tracker
--- A work in progess
+-- Two phase polyphonic trackers
+-- with per-step timing configuration
+-- Rows are in-scale notes
+-- Columns are steps
+-- Supports n.b voices
+-- 
+-- |Quickstart|
+-- Grid to program trackers
+-- Lower left sets octave
+-- Lower right selects active tracker
+-- Row above controls playback
+-- E1 scrolls through all steps
+--
+-- |UI|
+-- K2,K3 active section of UI
+-- E2 scrolls list, E3 changes values
+-- 
+-- |Step Editing Key Combo|
+-- Hold tracker button and press step to jump
+-- to that step's edit page
 
--- Core libraries
+--------------------
+-- Core libraries --
+--------------------
 local nb = require "nb/lib/nb"
 local musicutil = require "musicutil"
 local lattice = require "lattice"
-
-local scale_names = {} -- Table to hold scale names so they're usable in the setting params
-for i = 1, #musicutil.SCALES do
-    table.insert(scale_names, musicutil.SCALES[i].name) 
-end
-
 local g = grid.connect()
 
----------------------------
--- Some helper functions --
----------------------------
-function index_of(tbl, value) 
-    for i, v in ipairs(tbl) do
-        if v == value then
-            return i
-        end
-    end
-    return nil
-end
-
-function is_in_range(value, min, max)
-    return value >= min and value <= max
-end
-
-function map_int(value, min, max)
-    return math.floor(math.min(math.max(value, min), max) + 0.5)
-end
-
--- Global Config
+--------------------
+-- Configuration  --
+--------------------
+-- Timbre
+local scale_names = {} -- Table to hold scale names so they can be listed as strings
 local scale_index = 1
 local tonic_index = 3
 
--- Grid lighting configuration
+-- UI 
+-- UI > Index for nav/data
+local active_ui_pane = 2
+local active_tracker_index = 1 -- Manage editable state on screen and grid
+local active_window_start = 1 -- Manage the editable window on the grid 
+local active_config_index = 1 -- Manage the config view & retrieve relevant data
+local config_selected_param = 1 -- Track selected parameter for setting screen.light
+local selected_step = 1 -- Individual step to edit
+
+-- UI > Navigation View
+local navigation_selected_param = 1
+local navigation_parms_names = {
+    "wave",
+    "config"
+}
+local navigation_params_values = {
+    active_tracker_index,
+    active_config_index
+}
+
+-- UI > Config View
+local param_names_table = {
+    -- Global
+    {
+        "Mode",
+        "Key",
+        "Tempo"
+    },
+    -- Wave
+    {
+        "Clock Mod"
+        -- "Phasing Active",
+        -- "Rising Start Step",
+        -- "Rising Stop Step"
+        -- "Rising Cycles",
+        -- "Falling Start Step",
+        -- "Falling Stop Step",
+        -- "Falling Cycles"
+    },
+    -- Loop
+    {
+        "Voice",
+        "Octave",
+        "Grid Oct Shift",
+    },
+    -- Step
+    {
+        "Step", 
+        "Velocity", 
+        "Swing", 
+        "Division", 
+        "Beats Sus"
+    }
+}
+
+-- UI > Naming maps
+local config_options = {"Global", "Wave", "Voice", "Step"} -- Naming config pages for UI
+local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8} -- Possible step divisions
+local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
+local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8} -- Multiplied to duration selection to set wave-wide clock modifications
+local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
+local octave_on_grid = 0 -- the octave that appears on the grid
+
+-- UI > Scrolling Controls
+local scroll_index = 1 -- Track the first visible item in a long list
+local max_items_on_screen = 6 
+
+-- Grid
+-- Grid > lighting 
 local inactive_light = 2
 local dim_light = 5
 local medium_light = 12
 local high_light = 15
 
--- UI variables
-local active_ui_pane = 2
-local active_tracker_index = 1 -- Manage editable state on screen and grid
-local active_window_start = 1 -- Manage the editable window on the grid 
-
-local active_config_index = 1 -- Variable to identify and control the active section of the screen
-local config_options = {"Global", "Wave", "Voice", "Step"} -- Section names for UI
-local selected_step = 1 -- Individual step to edit
-local config_selected_param = 1
-
-local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8} -- Possible step divisions
-local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
-
-local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8}
-local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
-
-local octave_on_grid = 0 -- Index to allow octave selection on the grid
-
--- Scrolling Controls
-local scroll_index = 1 -- Track the first visible item in a long list
-local max_items_on_screen = 6 
-
-
--- Constants to separate the control panel
+-- Grid > control panel locations
 local CONTROL_COLUMNS_START = 13
 local CONTROL_COLUMNS_END = 16
 local MINIMAP_START_ROW = 1
@@ -75,15 +118,23 @@ local MINIMAP_END_ROW = 6
 local PLAYBACK_STATUS_ROW = 7
 local TRACKER_SELECTION_ROW = 8
 
--- Table for catching keycombos
+-- Grid > keycombo catcher
 local key_states = {
     tracker_selection = {},
     minimap = {}
 }
 
-local nb_voices = {} -- Table of options for tracker voice
+---------------------------
+-- Trackers and Playback --
+---------------------------
 
-function create_tracker(voice_id, active_length, root_octave) -- Helper function to make multiple trackers
+-- Trackers > Global references for core tables
+local nb_voices = {} -- Table for referencing n.b voices
+local trackers = {} -- Table for referencing trackers
+local sequencers = {}
+local primary_lattice = lattice:new()
+
+function create_tracker(voice_id, active_length, root_octave) -- Create trackers and set defaults
     local MAX_STEPS = 24 
     local tracker = {
         voice_id = voice_id,
@@ -116,12 +167,6 @@ function create_tracker(voice_id, active_length, root_octave) -- Helper function
     return tracker
 end
 
-local trackers = {
-    create_tracker(nil, 8, 4),
-    create_tracker(nil, 12, 4),
-    create_tracker(nil, 16, 4),
-    create_tracker(nil, 24, 4)
-}
 
 function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
     local root_note = ((root_octave - 1) * 12) + tonic_index - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
@@ -130,46 +175,48 @@ function build_scale(root_octave) -- Helper function for building scales from ro
     return scale
 end
 
-primary_lattice = lattice:new()
-
-local sequencers = {}
-for i = 1, #trackers do
-    local tracker = trackers[i] -- Create an alias for convenience
-    tracker.voice_id = i -- Assign an id to the tracker voice so we can manage it with n.b elsewhere
-    
-    sequencers[i] = primary_lattice:new_sprocket{
-        action = function()
-            if tracker.playing then -- Check if the tracker is playing
-                -- TODO: This works, but I've got both current_position and loop_count zero-indexed and I worry there will be reprecussions. Revisit this.
-                tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
-                if tracker.current_position == 1 then
-                    tracker.loop_count = tracker.loop_count + 1
-                end
-                
-                local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
-                
-                local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
-                local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
-
-                local modified_division = tracker.clock_modifider * current_step.duration
-               
-                sequencers[i]:set_division(modified_division) -- Set the division for the current step
-                sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
-
-                if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
-                    for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
-                        local note = scale_notes[degree] -- And match it to the appropriate note in the scale
-                        local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                        player:play_note(note, current_step.velocity, modified_division) -- And play the note
+function create_sequencers()
+    for i = 1, #trackers do
+        local tracker = trackers[i] -- Create an alias for convenience
+        tracker.voice_id = i -- Assign an id to the tracker voice so we can manage it with n.b elsewhere
+        
+        sequencers[i] = primary_lattice:new_sprocket{
+            action = function()
+                if tracker.playing then -- Check if the tracker is playing
+                    -- TODO: This works, but I've got both current_position and loop_count zero-indexed and I worry there will be reprecussions. Revisit this.
+                    tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
+                    if tracker.current_position == 1 then
+                        tracker.loop_count = tracker.loop_count + 1
                     end
+                    
+                    local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
+                    
+                    local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
+                    local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
+
+                    local modified_division = tracker.clock_modifider * current_step.duration
+                
+                    sequencers[i]:set_division(modified_division) -- Set the division for the current step
+                    sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
+
+                    if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
+                        for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
+                            local note = scale_notes[degree] -- And match it to the appropriate note in the scale
+                            local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
+                            player:play_note(note, current_step.velocity, modified_division) -- And play the note
+                        end
+                    end
+                    grid_redraw()
                 end
-                grid_redraw()
-            end
-        end,
-        division = 1
-    }
+            end,
+            division = 1
+        }
+    end
 end
 
+--------------------
+-- Grid Functions --
+--------------------
 -- Logic to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
 function update_tracker_length(x, y)
     -- Check if any tracker selection key is pressed
@@ -190,6 +237,14 @@ function update_tracker_length(x, y)
     end
 end
 
+function step_edit_shortcut(tracker_index, minimap_key)
+    if minimap_key == nil then return end -- Exit function if there's no minimap_key pressed
+    active_config_index = 4
+    active_tracker_index = tracker_index
+    selected_step = minimap_key
+    redraw()
+end
+
 -- Logic to change playback state
 function toggle_tracker_playback(tracker_index)
     local tracker_to_change = trackers[tracker_index]
@@ -200,14 +255,6 @@ function toggle_tracker_playback(tracker_index)
     end
     redraw()
     grid_redraw()
-end
-
-function step_edit_shortcut(tracker_index, minimap_key)
-    if minimap_key == nil then return end -- Exit function if there's no minimap_key pressed
-    active_config_index = 4
-    active_tracker_index = tracker_index
-    selected_step = minimap_key
-    redraw()
 end
 
 -- Logic for handling key pressed on the control panel (columns 13 > 16)
@@ -299,29 +346,9 @@ function g.key(x, y, pressed)
     end
 end
 
-
-function key(n, z)
-    if n == 2 and z == 1 then -- K2 switches to config pane
-        active_ui_pane = 1
-        redraw()
-    elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
-        active_ui_pane = 2
-        redraw()
-    end
-end
-
-local navigation_selected_param = 1
-
-local navigation_parms_names = {
-    "wave",
-    "config"
-}
-
-local navigation_params_values = {
-    active_tracker_index,
-    active_config_index
-}
-
+------------------
+-- UI Functions --
+------------------
 -- Logic for changing the active tracker
 function change_active_tracker(new_tracker_index)
     active_tracker_index = new_tracker_index
@@ -336,41 +363,7 @@ function change_active_config(new_config_index)
     redraw()
 end
 
-local param_names_table = {
-    -- Global
-    {
-        "Mode",
-        "Key",
-        "Tempo"
-    },
-    -- Wave
-    {
-        "Clock Mod"
-        -- "Phasing Active",
-        -- "Rising Start Step",
-        -- "Rising Stop Step"
-        -- "Rising Cycles",
-        -- "Falling Start Step",
-        -- "Falling Stop Step",
-        -- "Falling Cycles"
-    },
-    -- Loop
-    {
-        "Voice",
-        "Octave",
-        "Grid Oct Shift",
-    },
-    -- Step
-    {
-        "Step", 
-        "Velocity", 
-        "Swing", 
-        "Division", 
-        "Beats Sus"
-    }
-}
-
-function get_param_values_table()
+function get_param_values_table() -- Returns a refresehed table of all param values
     return {
         {
             tostring(scale_names[scale_index]),
@@ -393,6 +386,18 @@ function get_param_values_table()
             division_option_names[index_of(division_options, trackers[active_tracker_index].steps[selected_step].duration)]
         }
     }
+end
+
+
+-- Physical Controls
+function key(n, z)
+    if n == 2 and z == 1 then -- K2 switches to config pane
+        active_ui_pane = 1
+        redraw()
+    elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
+        active_ui_pane = 2
+        redraw()
+    end
 end
 
 function enc(n, d)
@@ -498,6 +503,7 @@ function enc(n, d)
     grid_redraw()
 end
 
+-- Creating UI
 function draw_settings()
     local is_active_pane = (active_ui_pane == 1)
 
@@ -592,6 +598,7 @@ function redraw()
     draw_navigation()
 end
 
+-- Creating Grid
 function grid_redraw()
     if not g then
         print("no grid found")
@@ -625,7 +632,7 @@ function grid_redraw()
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, high_light) -- If it is mark it with the highest brightness
-                elseif step < working_tracker.length then
+                elseif step <= working_tracker.length then
                     g:led(grid_step, mapped_grid_y, medium_light)
                 else
                     g:led(grid_step, mapped_grid_y, dim_light)
@@ -691,12 +698,53 @@ function grid_redraw()
     end
 end
 
+---------------------------
+-- Some helper functions --
+---------------------------
+function create_scale_names_table()
+    for i = 1, #musicutil.SCALES do
+        table.insert(scale_names, musicutil.SCALES[i].name) 
+    end
+end
+
+function index_of(tbl, value) -- Find the index of an item in a table
+    for i, v in ipairs(tbl) do
+        if v == value then
+            return i
+        end
+    end
+    return nil
+end
+
+function is_in_range(value, min, max) -- Check to see if a value is within a range
+    return value >= min and value <= max
+end
+
+------------------
+-- Start Script --
+------------------
 function init()
     print(clock.get_beat_sec())
+    -- TODO: This kickoff is really awkward
+    -- Creaters trackers and adds them to global table
+    trackers = {  
+        create_tracker(nil, 8, 4),
+        create_tracker(nil, 12, 4),
+        create_tracker(nil, 16, 4),
+        create_tracker(nil, 24, 4)
+    }
+    
+    create_scale_names_table()
+    -- Creates lattice sequencers that reference trackers
+    create_sequencers()
+    
+    -- Sets up menus
     params:add_separator("dawn_title", "Dawn")
-    nb:init()
-
     params:add_separator("voices", "N.B Voices")
+
+    -- N.B Setup
+    nb:init()
+    -- Adds voice option to trackers
     for i = 1, #trackers do
         nb:add_param("voice_" .. i, "voice_" .. i)
     end
@@ -708,8 +756,8 @@ function init()
         nb_voices[i] = option
     end
 
+    -- Start
     primary_lattice:start()
     redraw()
     grid_redraw()
-
 end
