@@ -1,6 +1,9 @@
 -- Dawn/Dusk
+-- awakening.systems
+--
 -- Two phase polyphonic trackers
 -- with per-step timing configuration
+--
 -- Rows are in-scale notes
 -- Columns are steps
 -- Supports n.b voices
@@ -194,7 +197,8 @@ function create_sequencers()
                     local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
                     local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
 
-                    local modified_division = tracker.clock_modifider * current_step.duration
+                    local modified_division = tracker.clock_modifider * current_step.division
+                    local modified_duration = (tracker.clock_modifider * current_step.duration) - 0.05
                 
                     sequencers[i]:set_division(modified_division) -- Set the division for the current step
                     sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
@@ -203,7 +207,7 @@ function create_sequencers()
                         for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
                             local note = scale_notes[degree] -- And match it to the appropriate note in the scale
                             local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                            player:play_note(note, current_step.velocity, modified_division) -- And play the note
+                            player:play_note(note, current_step.velocity, modified_duration) -- And play the note
                         end
                     end
                     grid_redraw()
@@ -723,9 +727,9 @@ end
 ------------------
 -- Start Script --
 ------------------
+-- TODO: This kickoff is really awkward
 function init()
     print(clock.get_beat_sec())
-    -- TODO: This kickoff is really awkward
     -- Creaters trackers and adds them to global table
     trackers = {  
         create_tracker(nil, 8, 4),
