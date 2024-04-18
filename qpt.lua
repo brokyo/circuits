@@ -39,10 +39,16 @@ local scale_names = {} -- Table to hold scale names so they can be listed as str
 local scale_index = 1
 local tonic_index = 3
 
+-- Global State Management
+local active_tracker_index = 1 -- Working tracker on norns and grid
+local active_phase_index = 1 -- Working phase on norns and grid
+
+-- Global Tracker Management
+local max_steps = 12
+
 -- UI 
 -- UI > Index for nav/data
-local active_ui_pane = 2
-local active_tracker_index = 1 -- Manage editable state on screen and grid
+local active_ui_pane = 1 -- Determines which norns pane is active. Controlled by k2 and k3
 local active_window_start = 1 -- Manage the editable window on the grid 
 local active_config_index = 1 -- Manage the config view & retrieve relevant data
 local config_selected_param = 1 -- Track selected parameter for setting screen.light
@@ -56,36 +62,37 @@ local navigation_parms_names = {
 }
 local navigation_params_values = {
     active_tracker_index,
-    active_config_index
+    active_phase_index
 }
 
 -- UI > Config View
 local param_names_table = {
     -- Global
     {
+        "Menu",
         "Mode",
         "Key",
         "Tempo"
     },
     -- Wave
     {
-        "Clock Mod"
-        -- "Phasing Active",
-        -- "Rising Start Step",
-        -- "Rising Stop Step"
-        -- "Rising Cycles",
-        -- "Falling Start Step",
-        -- "Falling Stop Step",
-        -- "Falling Cycles"
+        "Menu",
+        "Clock Mod",
+        "Total Phases",
+        "Phase 1 Cycles",
+        "Phase 2 Cycles",
+        "Beats To Sleep"
     },
     -- Loop
     {
+        "Menu",
         "Voice",
         "Octave",
         "Grid Oct Shift",
     },
     -- Step
     {
+        "Menu",
         "Step", 
         "Velocity", 
         "Swing", 
@@ -109,15 +116,18 @@ local max_items_on_screen = 6
 -- Grid
 -- Grid > lighting 
 local inactive_light = 2
-local dim_light = 5
-local medium_light = 12
-local high_light = 15
+local dim_light = 3
+local medium_light = 8
+local high_light = 10
+local max_light = 15
 
 -- Grid > control panel locations
 local CONTROL_COLUMNS_START = 13
 local CONTROL_COLUMNS_END = 16
 local MINIMAP_START_ROW = 1
-local MINIMAP_END_ROW = 6
+local MINIMAP_END_ROW = 3
+local TRACKER_FALLING_ROW = 5
+local TRACKER_RISING_ROW = 6
 local PLAYBACK_STATUS_ROW = 7
 local TRACKER_SELECTION_ROW = 8
 
@@ -137,39 +147,45 @@ local trackers = {} -- Table for referencing trackers
 local sequencers = {}
 local primary_lattice = lattice:new()
 
-function create_tracker(voice_id, active_length, root_octave) -- Create trackers and set defaults
-    local MAX_STEPS = 24 
+function create_tracker(voice_id, root_octave) -- Create trackers and set defaults
     local tracker = {
+        -- Voice Config
         voice_id = voice_id,
         voice_index = 1,
-        playing = false,
-        current_position = 0,
-        length = active_length,  -- Number of steps (of MAX_STEPS) to be played 
-        steps = {},
-        loop_count = 0,
         root_octave = root_octave,
+        -- Playback Config
+        playing = false,
         clock_modifider = 1,
-        phase_active = false,
-        rising = {
-            start = 1,
-            stop = 24,
-            cycles = 1
-        },
-        rising = {
-            start = 1,
-            stop = 24,
-            cycles = 1
+        beats_to_rest = 0,
+        -- Playback Indexes
+        current_position = 1,
+        current_phase = 1,
+        total_phases = 1,
+        -- Playback Phases
+        phases = {
+            {
+                steps = {},
+                length = max_steps,
+                current_cycle = 1,
+                total_cycles = 2
+            },
+            {
+                steps = {},
+                length = max_steps,
+                current_cycle = 1,
+                total_cycles = 2
+            }
         }
     }
     
     -- Initialize steps with default values
-    for i = 1, MAX_STEPS do
-        table.insert(tracker.steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
+    for i = 1, max_steps do
+        table.insert(tracker.phases[1].steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
+        table.insert(tracker.phases[2].steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
     end
     
     return tracker
 end
-
 
 function build_scale(root_octave) -- Helper function for building scales from root note and mode set in settings
     local root_note = ((root_octave - 1) * 12) + tonic_index - 1 -- Get the MIDI note for one octave below the root. Adjust by 1 due to Lua indexing
@@ -186,23 +202,22 @@ function create_sequencers()
         sequencers[i] = primary_lattice:new_sprocket{
             action = function()
                 if tracker.playing then -- Check if the tracker is playing
-                    -- TODO: This works, but I've got both current_position and loop_count zero-indexed and I worry there will be reprecussions. Revisit this.
-                    tracker.current_position = (tracker.current_position % tracker.length) + 1 -- Increase the tracker position (step) at the end of the call. Loop through if it croses the length.
-                    if tracker.current_position == 1 then
-                        tracker.loop_count = tracker.loop_count + 1
-                    end
-                    
-                    local current_step = tracker.steps[tracker.current_position] -- Get the table at the current step to configure play event
-                    
-                    local degree_table = tracker.steps[tracker.current_position].degrees -- Get the table of degrees to play for this step
+                    redraw()
+                    grid_redraw()
+                    local current_phase = tracker.phases[tracker.current_phase] -- Get the active phase
+                    -- Write some convenience Variables
+                    local current_step = current_phase.steps[tracker.current_position] -- Get the table at the current step to configure play event
+                    local degree_table = current_step.degrees -- Get the table of degrees to play for this step
                     local scale_notes = build_scale(tracker.root_octave) -- Generate a scale based on global key and mode
-
                     local modified_division = tracker.clock_modifider * current_step.division
                     local modified_duration = (tracker.clock_modifider * current_step.duration) - 0.05
-                
+                    -- print('S: ' .. tracker.current_position .. ' P: ' .. tracker.current_phase .. ' C: ' .. current_phase.current_cycle)
+                    
+                    -- Set modifiers for event
                     sequencers[i]:set_division(modified_division) -- Set the division for the current step
                     sequencers[i]:set_swing(current_step.swing) -- Set the swing for the current step
-
+                    
+                    -- Schedule note
                     if #degree_table > 0 then -- Check to see if the degree table at the current step contains values
                         for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
                             local note = scale_notes[degree] -- And match it to the appropriate note in the scale
@@ -210,7 +225,29 @@ function create_sequencers()
                             player:play_note(note, current_step.velocity, modified_duration) -- And play the note
                         end
                     end
-                    grid_redraw()
+                    
+                    tracker.current_position = tracker.current_position + 1 -- Increment the position
+                    if tracker.current_position == current_phase.length + 1 then -- If we've increased beyond the length
+
+                        current_phase.current_cycle = current_phase.current_cycle + 1 -- Increase the cycle count
+                        tracker.current_position = 1 -- Reset the position
+
+                        if current_phase.current_cycle == current_phase.total_cycles + 1 then -- If we're beyond the cycle limit, switch the phase
+                            if tracker.total_phases == 1 then -- If this tracker doesn't have phases
+                                current_phase.current_cycle = 1 -- Reset the cycle counter (cycle counter doesn't matter with a single phase. This is hygeine)
+                            else -- Otherwise
+                                tracker.current_phase = (tracker.current_phase + 1) % 3 -- Increment the phase tracker
+
+                                if tracker.current_phase == 0 then
+                                    sequencers[i]:set_division(tracker.beats_to_rest) -- Sleep the tracker until this number of beats pass
+                                    tracker.current_phase = 1 -- Reset the phase
+                                    current_phase.current_cycle = 1  -- Reset the cycle
+                                else
+                                    current_phase.current_cycle = 1
+                                end
+                            end
+                        end
+                    end
                 end
             end,
             division = 1
@@ -224,18 +261,23 @@ end
 -- Logic to update the length of the active tracker (i.e the number of steps that will play of the possible 24)
 function update_tracker_length(x, y)
     -- Check if any tracker selection key is pressed
-    local anyTrackerSelectionKeyPressed = false
-    for _, isPressed in pairs(key_states.tracker_selection) do
-        if isPressed then
-            anyTrackerSelectionKeyPressed = true
+    local any_tracker_selection_key_pressed = false
+    for _, is_pressed in pairs(key_states.tracker_selection) do
+        if is_pressed then
+            any_tracker_selection_key_pressed = true
             break
         end
     end
 
     -- Only update tracker length if no tracker selection key is pressed
-    if not anyTrackerSelectionKeyPressed then
-        local lengthOffset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
-        trackers[active_tracker_index].length = lengthOffset
+    if not any_tracker_selection_key_pressed then
+        local length_offset = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
+        trackers[active_tracker_index].phases[active_phase_index].length = length_offset
+
+        -- Catch edge case where the length is changed to be shorter than the current position
+        if trackers[active_tracker_index].current_position > trackers[active_tracker_index].phases[active_phase_index].length then
+            trackers[active_tracker_index].current_position = 1
+        end
         grid_redraw()
         redraw()
     end
@@ -249,13 +291,15 @@ function step_edit_shortcut(tracker_index, minimap_key)
     redraw()
 end
 
+-- TODO: Figure out where this happens
 -- Logic to change playback state
 function toggle_tracker_playback(tracker_index)
     local tracker_to_change = trackers[tracker_index]
     tracker_to_change.playing = not tracker_to_change.playing -- Flip the playback status
     -- And reset position to zero if we're stopping
     if not tracker_to_change.playing then
-        tracker_to_change.current_position = 0
+        tracker_to_change.current_position = 1
+        tracker_to_change.current_phase = 1
     end
     redraw()
     grid_redraw()
@@ -263,7 +307,7 @@ end
 
 -- Logic for handling key pressed on the control panel (columns 13 > 16)
 function handle_control_column_press(x, y, pressed)
-    -- Update key_states table
+    -- Update key_states table to handle keycombo
     if y == TRACKER_SELECTION_ROW then
         key_states.tracker_selection[x - CONTROL_COLUMNS_START + 1] = (pressed == 1)
     elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then
@@ -281,6 +325,8 @@ function handle_control_column_press(x, y, pressed)
         end
     elseif y >= MINIMAP_START_ROW and y <= MINIMAP_END_ROW then -- Change tracker length by pressing final step
         update_tracker_length(x, y)
+    elseif y >= TRACKER_FALLING_ROW and y<= TRACKER_RISING_ROW then
+        change_working_phase(x - CONTROL_COLUMNS_START + 1, y)
     elseif y == PLAYBACK_STATUS_ROW then -- Toggle playback status
         toggle_tracker_playback(x - CONTROL_COLUMNS_START + 1)
     end
@@ -325,6 +371,7 @@ function g.key(x, y, pressed)
         hanlde_octave_change(x, y, pressed)
     else
         local working_tracker = trackers[active_tracker_index]
+        local working_phase = working_tracker.phases[active_phase_index]
         local adjusted_x = x + active_window_start - 1
 
         -- Invert y-coordinate to match the horizontal layout and adjust for octave_on_grid
@@ -332,27 +379,28 @@ function g.key(x, y, pressed)
 
         if pressed == 1 and adjusted_x <= 21 then
             local index = nil
-            for i, v in ipairs(working_tracker.steps[adjusted_x].degrees) do
+            for i, v in ipairs(working_phase.steps[adjusted_x].degrees) do
                 if v == degree then
                     index = i
                     break
                 end
             end
             if index then
-                table.remove(working_tracker.steps[adjusted_x].degrees, index)
-                print("Degree " .. degree .. " removed from step " .. adjusted_x)
+                table.remove(working_phase.steps[adjusted_x].degrees, index)
+                print("Degree " .. degree .. " removed from step " .. adjusted_x .. " in phase " .. active_phase_index)
             else
-                table.insert(working_tracker.steps[adjusted_x].degrees, degree)
-                print("Degree " .. degree .. " added to step " .. adjusted_x)
+                table.insert(working_phase.steps[adjusted_x].degrees, degree)
+                print("Degree " .. degree .. " added to step " .. adjusted_x .. " in phase " .. active_phase_index)
             end
             grid_redraw()
         end
     end
 end
 
-------------------
--- UI Functions --
-------------------
+------------------------------
+-- Shared Global Functions --
+------------------------------
+ 
 -- Logic for changing the active tracker
 function change_active_tracker(new_tracker_index)
     active_tracker_index = new_tracker_index
@@ -361,6 +409,26 @@ function change_active_tracker(new_tracker_index)
     redraw()
 end
 
+function change_active_phase(new_phase_index)
+    active_phase_index = new_phase_index
+    octave_on_grid = 0
+    grid_redraw()
+    redraw()
+end
+
+-- Select the tracker and phase 
+function change_working_phase(new_tracker_index, new_phase_row)
+    active_phase_index = 7 - new_phase_row
+    active_tracker_index = new_tracker_index
+    octave_on_grid = 0 -- Reset the grid to the new tracker's root
+    grid_redraw()
+    redraw()
+end
+
+
+------------------
+-- UI Functions --
+------------------
 function change_active_config(new_config_index)
     active_config_index = new_config_index
     grid_redraw()
@@ -368,26 +436,36 @@ function change_active_config(new_config_index)
 end
 
 function get_param_values_table() -- Returns a refresehed table of all param values
+    local active_tracker = trackers[active_tracker_index]
+    local active_phase = active_tracker.phases[active_phase_index]
     return {
         {
+            config_options[active_config_index],
             tostring(scale_names[scale_index]),
             tostring(musicutil.NOTE_NAMES[tonic_index]),
-            tostring(params:get('clock_tempo')),
+            tostring(params:get('clock_tempo'))
         },
         {
-            clock_modifider_options_names[index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)]
+            config_options[active_config_index],
+            tostring(clock_modifider_options_names[index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)]),
+            tostring(active_tracker.total_phases),
+            tostring(active_tracker.phases[1].total_cycles),
+            tostring(active_tracker.phases[2].total_cycles),
+            tostring(active_tracker.beats_to_rest)
         },
         {
+            config_options[active_config_index],
             tostring(nb_voices[trackers[active_tracker_index].voice_index]),
             tostring(trackers[active_tracker_index].root_octave),
             tostring(octave_on_grid),
         },
         {
+            config_options[active_config_index],
             tostring(selected_step), 
-            tostring(trackers[active_tracker_index].steps[selected_step].velocity), 
-            tostring(trackers[active_tracker_index].steps[selected_step].swing), 
-            division_option_names[index_of(division_options, trackers[active_tracker_index].steps[selected_step].division)], 
-            division_option_names[index_of(division_options, trackers[active_tracker_index].steps[selected_step].duration)]
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].velocity), 
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].swing), 
+            division_option_names[index_of(division_options, trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].division)], 
+            division_option_names[index_of(division_options, trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].duration)]
         }
     }
 end
@@ -405,10 +483,15 @@ function key(n, z)
 end
 
 function enc(n, d)
+    -- For convenience
+    -- TODO: Could make a global getter setter on these? But that feels like Engineering?
+    local active_tracker = trackers[active_tracker_index]
+    local active_phase = active_tracker.phases[active_phase_index]
+
     -- Encoder 1 adjusts the active window start in all modes
     if n == 1 then 
-        active_window_start = util.clamp(active_window_start + d, 1, 13) -- Ensures the window doesn't go beyond the steps. Adjusts up to step 13 to allow a full window of 12 steps.
-        grid_redraw()
+        -- active_window_start = util.clamp(active_window_start + d, 1, 13) -- Ensures the window doesn't go beyond the steps. Adjusts up to step 13 to allow a full window of 12 steps.
+        -- grid_redraw()
     end
 
     ---------------------------------
@@ -423,10 +506,12 @@ function enc(n, d)
                 config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[1]) -- Parameters: Mode, Key, Tempo, Section
             elseif n == 3 then
                 if config_selected_param == 1 then
-                    scale_index = util.clamp(scale_index + d, 1, #scale_names)
+                    active_config_index = util.clamp(active_config_index + d, 1, #config_options)
                 elseif config_selected_param == 2 then
-                    tonic_index = util.clamp(tonic_index + d, 1, #musicutil.NOTE_NAMES)
+                    scale_index = util.clamp(scale_index + d, 1, #scale_names)
                 elseif config_selected_param == 3 then
+                    tonic_index = util.clamp(tonic_index + d, 1, #musicutil.NOTE_NAMES)
+                elseif config_selected_param == 4 then
                     params:delta("clock_tempo",d)
                 end
             end
@@ -435,27 +520,48 @@ function enc(n, d)
         ----------
         elseif active_config_index == 2 then
             if n == 2 then
-                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[2]) -- Parameters: Clock modifier 
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[2]) -- Parameters: Clock modifier, Phase Count, Rising Cycle, Falling Cycles, Beats to Sleep
             elseif n == 3 then
                 if config_selected_param == 1 then
+                    active_config_index = util.clamp(active_config_index + d, 1, #config_options)
+                elseif config_selected_param == 2 then
                     local current_mod_index = index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)
                     local new_clock_mod_index = util.clamp(current_mod_index + d, 1, #clock_modifider_options)
                     trackers[active_tracker_index].clock_modifider = clock_modifider_options[new_clock_mod_index]           
+                elseif config_selected_param == 3 then
+                    local total_phases = active_tracker.total_phases
+                    local phase_count = util.clamp(total_phases + d, 1, 2)
+                    active_tracker.total_phases = phase_count                    
+                elseif config_selected_param == 4 then
+                    local phase_cycles = active_tracker.phases[1].total_cycles
+                    local phase_count = util.clamp(phase_cycles + d, 1, 4)
+                    active_tracker.phases[1].total_cycles = phase_count
+                elseif config_selected_param == 5 then
+                    local phase_cycles = active_tracker.phases[2].total_cycles
+                    local phase_count = util.clamp(phase_cycles + d, 1, 4)
+                    active_tracker.phases[2].total_cycles = phase_count
+                elseif config_selected_param == 6 then
+                    local beats_to_rest = active_tracker.beats_to_rest
+                    local beat_count = util.clamp(beats_to_rest + d, 0, 4)
+                    active_tracker.beats_to_rest = beat_count
                 end
             end
-        ----=------
+        -----------
         -- Voice --
         -----------
         elseif active_config_index == 3 then
             if n == 2 then 
                 config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[3]) -- Parameters: Voice, Root Octave, Octave On Grid
             elseif n == 3 then
-                if config_selected_param == 1 then -- Change n.b voice
+                if config_selected_param == 1 then
+                    active_config_index = util.clamp(active_config_index + d, 1, #config_options)
+                    print(active_config_index)
+                elseif config_selected_param == 2 then -- Change n.b voice
                     trackers[active_tracker_index].voice_index = util.clamp(trackers[active_tracker_index].voice_index + d, 1, #nb_voices)
                     params:set("voice_" .. active_tracker_index, trackers[active_tracker_index].voice_index)
-                elseif config_selected_param == 2 then -- Change root octave
+                elseif config_selected_param == 3 then -- Change root octave
                     trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
-                elseif config_selected_param == 3 then -- Change root visualized on grid
+                elseif config_selected_param == 4 then -- Change root visualized on grid
                     octave_on_grid = util.clamp(octave_on_grid + d, -1, 1)
                 end
             end
@@ -466,18 +572,21 @@ function enc(n, d)
             if n == 2 then
                 config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[4]) -- Parameters: Step, Velocity, Swing, Division, Duration
             elseif n == 3 then -- E3 to modify the selected parameter
-                local step = trackers[active_tracker_index].steps[selected_step]
-                if config_selected_param == 1 then -- Navigate between steps
-                    selected_step = util.clamp(selected_step + d, 1, #trackers[active_tracker_index].steps)
-                elseif config_selected_param == 2 then -- Modify velocity
+                local step = trackers[active_tracker_index].phases[active_phase_index].steps[selected_step]
+               
+                if config_selected_param == 1 then
+                    active_config_index = util.clamp(active_config_index + d, 1, #config_options)
+                elseif config_selected_param == 2 then -- Navigate between steps
+                    selected_step = util.clamp(selected_step + d, 1, trackers[active_tracker_index].phases[active_phase_index].length)
+                elseif config_selected_param == 3 then -- Modify velocity
                     step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
-                elseif config_selected_param == 3 then -- Modify swing
+                elseif config_selected_param == 4 then -- Modify swing
                     step.swing = util.clamp(step.swing + d, 0, 100)
-                elseif config_selected_param == 4 then -- Modify division
+                elseif config_selected_param == 5 then -- Modify division
                     local current_division_index = index_of(division_options, step.division)
                     local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
                     step.division = division_options[new_division_index]
-                elseif config_selected_param == 5 then -- Modify duration
+                elseif config_selected_param == 6 then -- Modify duration
                     local current_duration_index = index_of(division_options, step.duration)
                     local new_duration_index = util.clamp(current_duration_index + d, 1, #division_options)
                     step.duration = division_options[new_duration_index]
@@ -497,8 +606,8 @@ function enc(n, d)
                 navigation_params_values[1] = util.clamp(navigation_params_values[1] + d, 1, #trackers)
                 change_active_tracker(navigation_params_values[1])
             elseif navigation_selected_param == 2 then
-                navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, #config_options)
-                change_active_config(navigation_params_values[2])
+                navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, 2)
+                change_active_phase(navigation_params_values[2])
             end
         end
     end
@@ -548,11 +657,7 @@ function draw_navigation()
     end
     screen.font_size(16)
     screen.move(103, 15)
-    if active_config_index == 1 then
-        screen.text_center("all")
-    else
-        screen.text_center(active_tracker_index)
-    end
+    screen.text_center(active_tracker_index)
 
     -- Title
     if is_active_pane and navigation_selected_param == 1 then
@@ -575,9 +680,9 @@ function draw_navigation()
     elseif not is_active_pane then
         screen.level(0)
     end
-    screen.font_size(8)
-    screen.move(105, 46)
-    screen.text_center(config_options[active_config_index])
+    screen.font_size(16)
+    screen.move(103, 46)
+    screen.text_center(active_phase_index)
 
     -- Title
     if is_active_pane and navigation_selected_param == 2 then
@@ -588,10 +693,9 @@ function draw_navigation()
         screen.level(2)
     end
 
-
     screen.font_size(8)
     screen.move(105, 56)
-    screen.text_center("config")
+    screen.text_center("phase")
     
     screen.update()
 end 
@@ -603,13 +707,14 @@ function redraw()
 end
 
 -- Creating Grid
+-- TODO: Need to totally refactor this so that it does a first pass drawing the UI and a second pass drawing the state
 function grid_redraw()
     if not g then
         print("no grid found")
         return
     end
-
     local working_tracker = trackers[active_tracker_index]    
+    local working_phase = working_tracker.phases[active_phase_index]
 
     g:all(0) -- Zero out grid
 
@@ -619,24 +724,28 @@ function grid_redraw()
     local adjusted_degree_end = adjusted_degree_start + 6
 
     -- Draw Tracker
-    for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
-        if step > 24 then print("step exceeds length") break end -- Catch errors
-        local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
+    -- NB: Removed logic for scrolling window. May return it later.
+    -- for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
+    for step = 1, 12 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
+        if step > max_steps then print("step exceeds length") break end -- Catch errors
+        -- local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
+        local grid_step = step
 
-        if step == working_tracker.current_position then
+        -- Highlight step
+        if step == working_tracker.current_position and active_phase_index == trackers[active_tracker_index].current_phase then
             for y = 1, 7 do -- Grid height for degrees
                 g:led(grid_step, y, dim_light)
             end
         end
                 
-        for _, active_degree in ipairs(working_tracker.steps[step].degrees or {}) do -- Grab the table of active degrees for this step    
+        for _, active_degree in ipairs(working_phase.steps[step].degrees or {}) do -- Grab the table of active degrees for this step    
             if is_in_range(active_degree, adjusted_degree_start, adjusted_degree_end) then -- Check if the degree's in the visible range based on octave_on_grid
                 local mapped_degree = (active_degree - 1) % 7 + 1 -- Map the degree from its current value to 1 > 8 so it can be shon on the grid
                 local mapped_grid_y = 8 - mapped_degree
 
-                if step == working_tracker.current_position then -- Check if it's in the current step
-                    g:led(grid_step, mapped_grid_y, high_light) -- If it is mark it with the highest brightness
-                elseif step <= working_tracker.length then
+                if step == working_tracker.current_position and active_phase_index == trackers[active_tracker_index].current_phase then -- Check if it's in the current step
+                    g:led(grid_step, mapped_grid_y, max_light) -- If it is mark it with the highest brightness
+                elseif step <= working_phase.length then
                     g:led(grid_step, mapped_grid_y, medium_light)
                 else
                     g:led(grid_step, mapped_grid_y, dim_light)
@@ -647,7 +756,7 @@ function grid_redraw()
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, medium_light) -- Mark it with the highest brightness
-                elseif step < working_tracker.length then
+                elseif step < working_phase.length then
                     g:led(grid_step, mapped_grid_y, dim_light)
                 else
                     g:led(grid_step, mapped_grid_y, 1)
@@ -659,9 +768,9 @@ function grid_redraw()
     for y = MINIMAP_START_ROW, MINIMAP_END_ROW do
         for x = CONTROL_COLUMNS_START, CONTROL_COLUMNS_END do
             local lengthValue = ((y - MINIMAP_START_ROW) * 4) + (x - CONTROL_COLUMNS_START + 1)
-            if lengthValue <= trackers[active_tracker_index].length then
+            if lengthValue <= working_phase.length then
                 -- Check if the current minimap position corresponds to the active step
-                if lengthValue == working_tracker.current_position then
+                if lengthValue == working_tracker.current_position and active_phase_index == trackers[active_tracker_index].current_phase then
                     g:led(x, y, medium_light) -- Use high_light for the active step
                 else
                     g:led(x, y, dim_light) -- Use a lower intensity for other steps
@@ -672,20 +781,45 @@ function grid_redraw()
         end
     end
 
-    -- Highlight the active tracker in the control panel
+    -- Highlight the active tracker and phase on the control panel
     for x = CONTROL_COLUMNS_START, CONTROL_COLUMNS_END do
-        local trackerIndex = x - CONTROL_COLUMNS_START + 1
-        if trackerIndex == active_tracker_index then
-            g:led(x, TRACKER_SELECTION_ROW, medium_light) -- Light the active tracker at medium_light intensity
+        local tracker_index = x - CONTROL_COLUMNS_START + 1
+
+        if tracker_index == active_tracker_index then
+            g:led(x, TRACKER_SELECTION_ROW, max_light) -- Light the active tracker at max_light intensity
         else
             g:led(x, TRACKER_SELECTION_ROW, 0) -- Other trackers remain at inactive_light intensity
         end
+
+
     end
 
-    -- Display playback status for each tracker on row 7
+    -- Display playback status for each tracker
     for i = 1, #trackers do
-        local playbackLight = trackers[i].playing and high_light or 0
-        g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playbackLight)
+        -- Active playing illumination
+        local playback_light = trackers[i].playing and medium_light or 0
+        g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playback_light)
+
+        -- Soft light all phase rows
+        g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_FALLING_ROW, dim_light)
+        g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_RISING_ROW, dim_light)
+        
+        -- Active phase illumination
+        if trackers[i].playing then
+            if trackers[i].current_phase == 0 then
+            elseif trackers[i].current_phase == 1 then
+                g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_RISING_ROW, medium_light)
+            elseif trackers[i].current_phase == 2 then
+                g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_FALLING_ROW, medium_light)
+            end
+
+            -- Overwrite brightness for the active phase in the active tracker
+            -- g:led(CONTROL_COLUMNS_START + i -1, active_phase_index, max_lights)
+        end
+
+        if i == active_tracker_index then
+            g:led(CONTROL_COLUMNS_START + i - 1, 7 - active_phase_index, max_light)
+        end
     end
 
     -- Octave control keys lighting logic
@@ -729,13 +863,12 @@ end
 ------------------
 -- TODO: This kickoff is really awkward
 function init()
-    print(clock.get_beat_sec())
     -- Creaters trackers and adds them to global table
     trackers = {  
-        create_tracker(nil, 8, 4),
-        create_tracker(nil, 12, 4),
-        create_tracker(nil, 16, 4),
-        create_tracker(nil, 24, 4)
+        create_tracker(nil, 4),
+        create_tracker(nil, 4),
+        create_tracker(nil, 4),
+        create_tracker(nil, 4)
     }
     
     create_scale_names_table()
@@ -764,4 +897,6 @@ function init()
     primary_lattice:start()
     redraw()
     grid_redraw()
+
+    print(#config_options)
 end
