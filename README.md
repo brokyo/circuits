@@ -1,22 +1,21 @@
-# Quad Polyphonic Tracker for Norns and Grid
+# Two Phase, Polyphonic Trackers for Norns and Grid
 
 ![Script Map](script_map.jpg "Grid Map")
 
 ### Quickstart
 #### Navigation
-- Grid broken into two core sections: Composition Panel and Control Panel
-- Norns broken into two sections: Loop (k2) and Step (k3)
-#### Grid Composition Panel
+- Grid broken into two core sections: Composition Canvas and Control Panel
+#### Grid Composition Canvas
 - Program notes to steps
 - Each column is a step, each row is a degree
-- 12 steps show at any one time
-- e1 scrolls through all 24 possible steps
+- Three keys on bottom left allow you to change octave
 #### Grid Control Panel
 - Use `Tracker Minimap` to select active length
+- `Phase Selection` to compose steps for A and B phase of the tracker
 - `Tracker Play State` to toggle tracker on and off
 - `Tracker Selection` to select active tracker
-
 ### Other Things To Know
-- Voices selected in Settings
+- Each tracker has a clock divider/multiplier
+- Each tracker can choose between one or two phases and the number of loops on each
 - Holding the active tracker button in `Tracker Selection` and pressing a step allows you to jump directly to editing that step
-
+- Steps can be any length
