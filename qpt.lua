@@ -1,4 +1,4 @@
--- Dawn/Dusk
+-- Circuits
 -- awakening.systems
 --
 -- Two phase polyphonic trackers
@@ -11,13 +11,13 @@
 -- |Quickstart|
 -- Grid to program trackers
 -- Lower left sets octave
--- Lower right selects active tracker
--- Row above controls playback
--- E1 scrolls through all steps
+-- Row 8 selects active tracker
+-- Row 7 starts/stops tracker
+-- Rows 6 & 5 select phase to edit
 --
 -- |UI|
--- K2,K3 active section of UI
 -- E2 scrolls list, E3 changes values
+-- "Menu" changes between config pages
 -- 
 -- |Step Editing Key Combo|
 -- Hold tracker button and press step to jump
@@ -103,8 +103,8 @@ local param_names_table = {
 
 -- UI > Naming maps
 local config_options = {"Global", "Wave", "Voice", "Step"} -- Naming config pages for UI
-local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8} -- Possible step divisions
-local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8"} -- Names as strings for showing in param list
+local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8, 12} -- Possible step divisions
+local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8", "12"} -- Names as strings for showing in param list
 local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8} -- Multiplied to duration selection to set wave-wide clock modifications
 local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
 local octave_on_grid = 0 -- the octave that appears on the grid
@@ -228,6 +228,7 @@ function create_sequencers()
                     
                     tracker.current_position = tracker.current_position + 1 -- Increment the position
                     if tracker.current_position == current_phase.length + 1 then -- If we've increased beyond the length
+                    -- print('Ended:' .. ' P: ' .. tracker.current_phase .. ' C: ' .. current_phase.current_cycle)
 
                         current_phase.current_cycle = current_phase.current_cycle + 1 -- Increase the cycle count
                         tracker.current_position = 1 -- Reset the position
@@ -418,6 +419,7 @@ end
 
 -- Select the tracker and phase 
 function change_working_phase(new_tracker_index, new_phase_row)
+    active_config_index = 2
     active_phase_index = 7 - new_phase_row
     active_tracker_index = new_tracker_index
     octave_on_grid = 0 -- Reset the grid to the new tracker's root
@@ -473,13 +475,13 @@ end
 
 -- Physical Controls
 function key(n, z)
-    if n == 2 and z == 1 then -- K2 switches to config pane
-        active_ui_pane = 1
-        redraw()
-    elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
-        active_ui_pane = 2
-        redraw()
-    end
+    -- if n == 2 and z == 1 then -- K2 switches to config pane
+    --     active_ui_pane = 1
+    --     redraw()
+    -- elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
+    --     active_ui_pane = 2
+    --     redraw()
+    -- end
 end
 
 function enc(n, d)
@@ -555,7 +557,6 @@ function enc(n, d)
             elseif n == 3 then
                 if config_selected_param == 1 then
                     active_config_index = util.clamp(active_config_index + d, 1, #config_options)
-                    print(active_config_index)
                 elseif config_selected_param == 2 then -- Change n.b voice
                     trackers[active_tracker_index].voice_index = util.clamp(trackers[active_tracker_index].voice_index + d, 1, #nb_voices)
                     params:set("voice_" .. active_tracker_index, trackers[active_tracker_index].voice_index)
@@ -897,6 +898,4 @@ function init()
     primary_lattice:start()
     redraw()
     grid_redraw()
-
-    print(#config_options)
 end
