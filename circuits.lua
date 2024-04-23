@@ -26,7 +26,7 @@
 --------------------
 -- Core libraries --
 --------------------
-local nb = require "nb/lib/nb"
+local nb = require("circuits/lib/nb/lib/nb")
 local musicutil = require "musicutil"
 local lattice = require "lattice"
 local g = grid.connect()
