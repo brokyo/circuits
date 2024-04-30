@@ -55,6 +55,7 @@ local config_selected_param = 1 -- Track selected parameter for setting screen.l
 local selected_step = 1 -- Individual step to edit
 
 -- UI > Navigation View
+local app_mode_index = 2
 local navigation_selected_param = 1
 local navigation_parms_names = {
     "wave",
@@ -65,15 +66,17 @@ local navigation_params_values = {
     active_phase_index
 }
 
--- UI > Config View
-local param_names_table = {
-    -- Global
+-- UI > Global View
+local global_param_names = {
     {
-        "Menu",
         "Mode",
         "Key",
         "Tempo"
-    },
+    }
+}
+
+-- UI > Config View
+local param_names_table = {
     -- Wave
     {
         "Menu",
@@ -102,7 +105,7 @@ local param_names_table = {
 }
 
 -- UI > Naming maps
-local config_options = {"Global", "Wave", "Voice", "Step"} -- Naming config pages for UI
+local config_options = {"Wave", "Voice", "Step"} -- Naming config pages for UI
 local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 4, 8, 12} -- Possible step divisions
 local division_option_names = {"1/16", "1/8", "1/4", "1/3", "1/2", "2/3", "1", "2", "4", "8", "12"} -- Names as strings for showing in param list
 local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8} -- Multiplied to duration selection to set wave-wide clock modifications
@@ -437,16 +440,20 @@ function change_active_config(new_config_index)
     redraw()
 end
 
+function get_global_config_values()
+    return {
+        {
+            tostring(scale_names[scale_index]),
+            tostring(musicutil.NOTE_NAMES[tonic_index]),
+            tostring(params:get('clock_tempo'))
+        }
+    }
+end
+
 function get_param_values_table() -- Returns a refresehed table of all param values
     local active_tracker = trackers[active_tracker_index]
     local active_phase = active_tracker.phases[active_phase_index]
     return {
-        {
-            config_options[active_config_index],
-            tostring(scale_names[scale_index]),
-            tostring(musicutil.NOTE_NAMES[tonic_index]),
-            tostring(params:get('clock_tempo'))
-        },
         {
             config_options[active_config_index],
             tostring(clock_modifider_options_names[index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)]),
@@ -475,13 +482,11 @@ end
 
 -- Physical Controls
 function key(n, z)
-    -- if n == 2 and z == 1 then -- K2 switches to config pane
-    --     active_ui_pane = 1
-    --     redraw()
-    -- elseif n == 3 and z == 1 then -- K3 switches to Nav pane 
-    --     active_ui_pane = 2
-    --     redraw()
-    -- end
+
+    if n == 3 and z == 1 then -- K3 switches app mode
+        app_mode_index = (app_mode_index % 3) + 1
+        redraw()
+    end
 end
 
 function enc(n, d)
@@ -496,33 +501,33 @@ function enc(n, d)
         -- grid_redraw()
     end
 
-    ---------------------------------
-    -- Config Pane | Encoder Logic --
-    ---------------------------------
-    if active_ui_pane == 1 then
-        ------------
-        -- Global --
-        ------------
-        if active_config_index == 1 then
-            if n == 2 then
-                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[1]) -- Parameters: Mode, Key, Tempo, Section
-            elseif n == 3 then
-                if config_selected_param == 1 then
-                    active_config_index = util.clamp(active_config_index + d, 1, #config_options)
-                elseif config_selected_param == 2 then
-                    scale_index = util.clamp(scale_index + d, 1, #scale_names)
-                elseif config_selected_param == 3 then
-                    tonic_index = util.clamp(tonic_index + d, 1, #musicutil.NOTE_NAMES)
-                elseif config_selected_param == 4 then
-                    params:delta("clock_tempo",d)
-                end
+    ------------------------------------
+    -- Global Config |  Encoder Logic --
+    ------------------------------------
+    if app_mode_index == 1 then
+        if n == 2 then
+            config_selected_param = util.clamp(config_selected_param + d, 1, #global_param_names[1]) -- Parameters: Mode, Key, Tempo, Section        
+        elseif n == 3 then
+            if config_selected_param == 1 then
+                scale_index = util.clamp(scale_index + d, 1, #scale_names)
+            elseif config_selected_param == 2 then
+                tonic_index = util.clamp(tonic_index + d, 1, #musicutil.NOTE_NAMES)
+            elseif config_selected_param == 3 then
+                params:delta("clock_tempo",d)
             end
+        end
+    end
+
+    ---------------------------------
+    -- Tracker Config | Encoder Logic --
+    ---------------------------------
+    if app_mode_index == 2 then
         ----------
         -- Wave --
         ----------
-        elseif active_config_index == 2 then
+        if active_config_index == 1 then
             if n == 2 then
-                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[2]) -- Parameters: Clock modifier, Phase Count, Rising Cycle, Falling Cycles, Beats to Sleep
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[1]) -- Parameters: Clock modifier, Phase Count, Rising Cycle, Falling Cycles, Beats to Sleep
             elseif n == 3 then
                 if config_selected_param == 1 then
                     active_config_index = util.clamp(active_config_index + d, 1, #config_options)
@@ -551,9 +556,9 @@ function enc(n, d)
         -----------
         -- Voice --
         -----------
-        elseif active_config_index == 3 then
+        elseif active_config_index == 2 then
             if n == 2 then 
-                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[3]) -- Parameters: Voice, Root Octave, Octave On Grid
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[2]) -- Parameters: Voice, Root Octave, Octave On Grid
             elseif n == 3 then
                 if config_selected_param == 1 then
                     active_config_index = util.clamp(active_config_index + d, 1, #config_options)
@@ -569,9 +574,9 @@ function enc(n, d)
         ----------
         -- Step --
         ----------
-        elseif active_config_index == 4 then
+        elseif active_config_index == 3 then
             if n == 2 then
-                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[4]) -- Parameters: Step, Velocity, Swing, Division, Duration
+                config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[3]) -- Parameters: Step, Velocity, Swing, Division, Duration
             elseif n == 3 then -- E3 to modify the selected parameter
                 local step = trackers[active_tracker_index].phases[active_phase_index].steps[selected_step]
                
@@ -596,22 +601,22 @@ function enc(n, d)
         end
     end
 
-    -------------------------------------
-    -- Navigation Pane | Encoder Logic --
-    -------------------------------------
-    if active_ui_pane == 2 then
-        if n == 2 then
-            navigation_selected_param = util.clamp(navigation_selected_param + d, 1, 2)
-        elseif n == 3 then
-            if navigation_selected_param == 1 then
-                navigation_params_values[1] = util.clamp(navigation_params_values[1] + d, 1, #trackers)
-                change_active_tracker(navigation_params_values[1])
-            elseif navigation_selected_param == 2 then
-                navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, 2)
-                change_active_phase(navigation_params_values[2])
-            end
-        end
-    end
+    -- -------------------------------------
+    -- -- Navigation Pane | Encoder Logic --
+    -- -------------------------------------
+    -- if active_ui_pane == 2 then
+    --     if n == 2 then
+    --         navigation_selected_param = util.clamp(navigation_selected_param + d, 1, 2)
+    --     elseif n == 3 then
+    --         if navigation_selected_param == 1 then
+    --             navigation_params_values[1] = util.clamp(navigation_params_values[1] + d, 1, #trackers)
+    --             change_active_tracker(navigation_params_values[1])
+    --         elseif navigation_selected_param == 2 then
+    --             navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, 2)
+    --             change_active_phase(navigation_params_values[2])
+    --         end
+    --     end
+    -- end
 
     redraw()
     grid_redraw()
@@ -621,85 +626,108 @@ end
 function draw_settings()
     local is_active_pane = (active_ui_pane == 1)
 
-    local param_names = param_names_table[active_config_index]
-    local param_values = get_param_values_table()[active_config_index]
+    if app_mode_index == 1 then
+        local param_names = global_param_names[1]
+        local param_values = get_global_config_values()[1]
 
-    local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
+        local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
 
-    for i = scroll_index, list_end do
-        local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
-        if not is_active_pane then
-            screen.level(2)
-        else
-            screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+        for i = scroll_index, list_end do
+            local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
+            if not is_active_pane then
+                screen.level(2)
+            else
+                screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+            end
+            screen.move(2, y)
+            screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
+        end   
+    elseif app_mode_index == 2 then
+        local param_names = param_names_table[active_config_index]
+        local param_values = get_param_values_table()[active_config_index]
+
+        local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
+
+        for i = scroll_index, list_end do
+            local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
+            if not is_active_pane then
+                screen.level(2)
+            else
+                screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+            end
+            screen.move(2, y)
+            screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
         end
-        screen.move(2, y)
-        screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
+    elseif app_mode_index == 3 then
+
     end
 end
 
 function draw_navigation()
     local is_active_pane = (active_ui_pane == 2)
 
-    screen.level(is_active_pane and 15 or 8)
+    screen.level(8)
     screen.rect(84, 0, 44, 64)
     screen.fill()
     
-    -- Section Settings
-    screen.font_face(1)
-
-    -- Number
-    if is_active_pane and navigation_selected_param == 1 then
+    if app_mode_index == 1 then
+        screen.font_size(8)
+        screen.level(6)
+        screen.move(105, 40)
+        screen.text_center("k3")
         screen.level(0)
-    elseif is_active_pane and navigation_selected_param ~= 1 then
+        screen.move(92, 60)
+        screen.text("GLOBAL")
+    elseif app_mode_index == 2 then
+        -- Section Settings
+        screen.font_face(1)
+
+        -- Number
+        screen.level(0)
+        screen.font_size(12)
+        screen.move(103, 12)
+        screen.text_center(active_tracker_index)
+
+        -- Title
         screen.level(2)
-    elseif not is_active_pane then
-        screen.level(0)
-    end
-    screen.font_size(16)
-    screen.move(103, 15)
-    screen.text_center(active_tracker_index)
+        screen.font_size(8)
+        screen.move(105, 20)
+        screen.text_center("wave")
 
-    -- Title
-    if is_active_pane and navigation_selected_param == 1 then
+
+        -- Section
         screen.level(0)
-    elseif is_active_pane and navigation_selected_param ~= 1 then
-        screen.level(4)
-    elseif not is_active_pane then
+        screen.font_size(12)
+        screen.move(103, 36)
+        screen.text_center(active_phase_index)
+
         screen.level(2)
-    end
-    screen.font_size(8)
-    screen.move(105, 24)
-    screen.text_center("wave")
+        screen.font_size(8)
+        screen.move(105, 44)
+        screen.text_center("phase")
 
-
-    -- Section
-    if is_active_pane and navigation_selected_param == 2 then
         screen.level(0)
-    elseif is_active_pane and navigation_selected_param ~= 2 then
-        screen.level(2)
-    elseif not is_active_pane then
+        screen.move(92, 60)
+        screen.text("TRACKER")
+    elseif app_mode_index == 3 then
+        screen.font_size(8)
+        screen.level(6)
+        screen.move(105, 40)
+        screen.text_center("k3")
         screen.level(0)
-    end
-    screen.font_size(16)
-    screen.move(103, 46)
-    screen.text_center(active_phase_index)
-
-    -- Title
-    if is_active_pane and navigation_selected_param == 2 then
-        screen.level(0)
-    elseif is_active_pane and navigation_selected_param ~= 2 then
-        screen.level(4)
-    elseif not is_active_pane then
-        screen.level(2)
+        screen.move(106, 60)
+        screen.text_center("KEYBOARD")
     end
 
-    screen.font_size(8)
-    screen.move(105, 56)
-    screen.text_center("phase")
-    
+    screen.level(0)
+    screen.rect(85, 50, 41, 1)
+    screen.fill()
+
     screen.update()
 end 
+
+
+
 
 function redraw()
     screen.clear()
