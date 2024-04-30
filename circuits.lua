@@ -684,7 +684,7 @@ function draw_navigation()
 
         -- Number
         screen.level(0)
-        screen.font_size(12)
+        screen.font_size(14)
         screen.move(103, 12)
         screen.text_center(active_tracker_index)
 
@@ -697,7 +697,7 @@ function draw_navigation()
 
         -- Section
         screen.level(0)
-        screen.font_size(12)
+        screen.font_size(14)
         screen.move(103, 36)
         screen.text_center(active_phase_index)
 
