@@ -368,7 +368,7 @@ function hanlde_octave_change(x, y, pressed)
     end
 end
 
-function g.key(x, y, pressed)    
+function handle_grid_keys_tracker(x, y, pressed)
     if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then
         handle_control_column_press(x, y, pressed)
     elseif y == 8 then
@@ -398,6 +398,14 @@ function g.key(x, y, pressed)
             end
             grid_redraw()
         end
+    end
+end
+
+function g.key(x, y, pressed)    
+    if app_mode_index == 1 then
+    elseif app_mode_index == 2 then
+        handle_grid_keys_tracker(x, y, pressed)
+    elseif app_mode_index == 3 then
     end
 end
 
@@ -485,6 +493,7 @@ function key(n, z)
 
     if n == 3 and z == 1 then -- K3 switches app mode
         app_mode_index = (app_mode_index % 3) + 1
+        grid_redraw()
         redraw()
     end
 end
@@ -850,6 +859,10 @@ function draw_tracker_controls(working_tracker, working_phase)
     end
 end
 
+function draw_clonky()
+
+end
+
 -- Creating Grid
 -- TODO: Need to totally refactor this so that it does a first pass drawing the UI and a second pass drawing the state
 function grid_redraw()
@@ -868,6 +881,7 @@ function grid_redraw()
         draw_tracker_canvas(working_tracker, working_phase)
         draw_tracker_controls(working_tracker, working_phase)
     elseif app_mode_index == 3 then
+        draw_clonky()
     end
 
     g:refresh() -- Send the LED buffer to the grid
