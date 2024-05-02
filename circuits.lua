@@ -726,42 +726,27 @@ function draw_navigation()
     screen.update()
 end 
 
-
-
-
 function redraw()
     screen.clear()
     draw_settings()
     draw_navigation()
 end
 
--- Creating Grid
--- TODO: Need to totally refactor this so that it does a first pass drawing the UI and a second pass drawing the state
-function grid_redraw()
-    if not g then
-        print("no grid found")
-        return
-    end
-    local working_tracker = trackers[active_tracker_index]    
-    local working_phase = working_tracker.phases[active_phase_index]
-
-    g:all(0) -- Zero out grid
-
-
+function draw_tracker_canvas(working_tracker, working_phase)
     -- Define the adjusted degree range currently on grid
     local adjusted_degree_start = ((octave_on_grid + 1) * 7) + 1
     local adjusted_degree_end = adjusted_degree_start + 6
 
     -- Draw Tracker
     -- NB: Removed logic for scrolling window. May return it later.
-    -- for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
+    -- -- for step = active_window_start, active_window_start + 11 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
+    -- -- local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
     for step = 1, 12 do -- Iterate through 12 steps starting at the active_window_start (determined by e1)
         if step > max_steps then print("step exceeds length") break end -- Catch errors
-        -- local grid_step = step - active_window_start + 1 -- Adjusted step index so regardless of what actual numbered step we're talking about we're drawing on the visible window
         local grid_step = step
 
         -- Highlight step
-        if step == working_tracker.current_position and active_phase_index == trackers[active_tracker_index].current_phase then
+        if step == working_tracker.current_position then
             for y = 1, 7 do -- Grid height for degrees
                 g:led(grid_step, y, dim_light)
             end
@@ -774,7 +759,7 @@ function grid_redraw()
 
                 if step == working_tracker.current_position and active_phase_index == trackers[active_tracker_index].current_phase then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, max_light) -- If it is mark it with the highest brightness
-                elseif step <= working_phase.length then
+                elseif step <= working_phase.length then -- N.B | This is holdover logic from the scrolling step window. Keeping it in case I want to return that feature
                     g:led(grid_step, mapped_grid_y, medium_light)
                 else
                     g:led(grid_step, mapped_grid_y, dim_light)
@@ -785,14 +770,17 @@ function grid_redraw()
 
                 if step == working_tracker.current_position then -- Check if it's in the current step
                     g:led(grid_step, mapped_grid_y, medium_light) -- Mark it with the highest brightness
-                elseif step < working_phase.length then
+                elseif step <= working_phase.length then
                     g:led(grid_step, mapped_grid_y, dim_light)
                 else
-                    g:led(grid_step, mapped_grid_y, 1)
+                    g:led(grid_step, mapped_grid_y, dim_light)
                 end
             end
         end
+    end
+end
 
+function draw_tracker_controls(working_tracker, working_phase)
     -- Highlight the 12 steps in the active window  length of the active tracker
     for y = MINIMAP_START_ROW, MINIMAP_END_ROW do
         for x = CONTROL_COLUMNS_START, CONTROL_COLUMNS_END do
@@ -860,9 +848,29 @@ function grid_redraw()
             g:led(i, 8, dim_light) -- Inactive keys with dim_light
         end
     end
+end
+
+-- Creating Grid
+-- TODO: Need to totally refactor this so that it does a first pass drawing the UI and a second pass drawing the state
+function grid_redraw()
+    if not g then
+        print("no grid found")
+        return
+    end
+
+    g:all(0) -- Zero out grid
+
+    if app_mode_index == 1 then
+    elseif app_mode_index == 2 then
+        local working_tracker = trackers[active_tracker_index]    
+        local working_phase = working_tracker.phases[active_phase_index]
+    
+        draw_tracker_canvas(working_tracker, working_phase)
+        draw_tracker_controls(working_tracker, working_phase)
+    elseif app_mode_index == 3 then
+    end
 
     g:refresh() -- Send the LED buffer to the grid
-    end
 end
 
 ---------------------------
