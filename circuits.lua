@@ -37,7 +37,7 @@ local g = grid.connect()
 -- Timbre
 local scale_names = {} -- Table to hold scale names so they can be listed as strings
 local scale_index = 1
-local tonic_index = 3
+local tonic_index = 1
 
 -- Global State Management
 local active_tracker_index = 1 -- Working tracker on norns and grid
@@ -55,7 +55,7 @@ local config_selected_param = 1 -- Track selected parameter for setting screen.l
 local selected_step = 1 -- Individual step to edit
 
 -- UI > Navigation View
-local app_mode_index = 2
+local app_mode_index = 3
 local navigation_selected_param = 1
 local navigation_parms_names = {
     "wave",
@@ -103,6 +103,22 @@ local param_names_table = {
         "Beats Sus"
     }
 }
+
+-- UI > Keyboard view
+local keyboard_param_names = {
+    {
+        "Voice",
+        "Root Oct",
+        "String Dist"
+    }
+}
+local keyboard_param_values = {
+
+}
+
+local keyboard_voice_index = 0
+local keyboard_root_octave = 2
+local keyboard_string_distance = 5
 
 -- UI > Naming maps
 local config_options = {"Wave", "Voice", "Step"} -- Naming config pages for UI
@@ -401,11 +417,66 @@ function handle_grid_keys_tracker(x, y, pressed)
     end
 end
 
+--------------------
+-- Keyboard Stuff --
+--------------------
+local keyboard_min_octave = 1
+local clonky_active = {}
+
+function get_keyboard_config_values()
+    return {
+        {
+            tostring(nb_voices[keyboard_voice_index]),
+            tostring(keyboard_root_octave),
+            tostring(keyboard_string_distance)
+        }
+    }
+end
+
+function draw_clonky()
+    for x = 1, 8 do
+        for y = 1, 8 do
+            g:led(x, y, dim_light)
+        end
+    end
+
+    for note, coords in pairs(clonky_active) do
+        g:led(coords.x, coords.y, high_light)
+    end
+end
+
+-- TODO: Better to just create the scale once then update when needed. Quickest version while testing the idea.
+function get_midi_note_from_keyboard(x, y)
+    local octave_offset = keyboard_min_octave * 12
+    local scale = musicutil.generate_scale_of_length(((tonic_index - 1)) + (12 * keyboard_root_octave), scale_index, 80) 
+    local note_index = (8 - y) + ((x - 1) * keyboard_string_distance) + 1
+    return scale[note_index]
+end
+
+function handle_grid_keys_clonky(x, y, pressed)
+    local midi_note = get_midi_note_from_keyboard(x, y)
+    local player = params:lookup_param("keyboard_voice"):get_player()
+
+    if pressed == 1 then
+        -- TODO: Set velocity elsewhere on grid, default to 0.9 if no selection
+        player:note_on(midi_note, 1)
+        print("Note on: " .. midi_note)
+        clonky_active[midi_note] = {x = x, y = y}  -- Store active note with its grid coordinates
+    else
+        player:note_off(midi_note)
+        print("Note off: " .. midi_note)
+        clonky_active[midi_note] = nil  -- Remove note from active list when released
+    end
+
+    grid_redraw()
+end
+
 function g.key(x, y, pressed)    
     if app_mode_index == 1 then
     elseif app_mode_index == 2 then
         handle_grid_keys_tracker(x, y, pressed)
     elseif app_mode_index == 3 then
+        handle_grid_keys_clonky(x, y, pressed)
     end
 end
 
@@ -610,22 +681,23 @@ function enc(n, d)
         end
     end
 
-    -- -------------------------------------
-    -- -- Navigation Pane | Encoder Logic --
-    -- -------------------------------------
-    -- if active_ui_pane == 2 then
-    --     if n == 2 then
-    --         navigation_selected_param = util.clamp(navigation_selected_param + d, 1, 2)
-    --     elseif n == 3 then
-    --         if navigation_selected_param == 1 then
-    --             navigation_params_values[1] = util.clamp(navigation_params_values[1] + d, 1, #trackers)
-    --             change_active_tracker(navigation_params_values[1])
-    --         elseif navigation_selected_param == 2 then
-    --             navigation_params_values[2] = util.clamp(navigation_params_values[2] + d, 1, 2)
-    --             change_active_phase(navigation_params_values[2])
-    --         end
-    --     end
-    -- end
+    -------------------------------------
+    -- Keyboard Config | Encoder Logic --
+    -------------------------------------
+    if app_mode_index == 3 then
+        if n == 2 then
+            config_selected_param = util.clamp(config_selected_param + d, 1, #keyboard_param_names[1])
+        elseif n == 3 then
+            if config_selected_param == 1 then
+                keyboard_voice_index = util.clamp(keyboard_voice_index + d, 1, #nb_voices)
+                params:set("keyboard_voice" , keyboard_voice_index)
+            elseif config_selected_param == 2 then
+                keyboard_root_octave = util.clamp(keyboard_root_octave + d, 0, 8)
+            elseif config_selected_param == 3 then
+                keyboard_string_distance = util.clamp(keyboard_string_distance + d, 1, 8)
+            end
+        end
+    end
 
     redraw()
     grid_redraw()
@@ -668,7 +740,22 @@ function draw_settings()
             screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
         end
     elseif app_mode_index == 3 then
+        local param_names = keyboard_param_names[1]
+        local param_values = get_keyboard_config_values()
 
+        local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
+
+        for i = scroll_index, list_end do
+            local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
+            if not is_active_pane then
+                screen.level(2)
+            else
+                screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+            end
+            screen.move(2, y)
+            -- TODO: Something about this is wrong. I shouldn't be setting paramvalues[1][n] and should instead be setting an active_config_index
+            screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[1][i - scroll_index + 1])
+        end
     end
 end
 
@@ -859,10 +946,6 @@ function draw_tracker_controls(working_tracker, working_phase)
     end
 end
 
-function draw_clonky()
-
-end
-
 -- Creating Grid
 -- TODO: Need to totally refactor this so that it does a first pass drawing the UI and a second pass drawing the state
 function grid_redraw()
@@ -936,6 +1019,9 @@ function init()
     for i = 1, #trackers do
         nb:add_param("voice_" .. i, "voice_" .. i)
     end
+
+    nb:add_param("keyboard_voice", "keyboard_voice")
+
     nb:add_player_params()
 
     local voice_lookup = params:lookup_param("voice_1")
