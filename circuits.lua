@@ -109,16 +109,16 @@ local keyboard_param_names = {
     {
         "Voice",
         "Root Oct",
-        "String Dist"
+        "String Dist",
+        "Vel Root"
     }
-}
-local keyboard_param_values = {
-
 }
 
 local keyboard_voice_index = 0
 local keyboard_root_octave = 2
 local keyboard_string_distance = 5
+local velocity_root = 0.6
+local velocity = 0.6
 
 -- UI > Naming maps
 local config_options = {"Wave", "Voice", "Step"} -- Naming config pages for UI
@@ -422,13 +422,15 @@ end
 --------------------
 local keyboard_min_octave = 1
 local clonky_active = {}
+local current_velocity_index = 1
 
 function get_keyboard_config_values()
     return {
         {
             tostring(nb_voices[keyboard_voice_index]),
             tostring(keyboard_root_octave),
-            tostring(keyboard_string_distance)
+            tostring(keyboard_string_distance),
+            tostring(velocity_root)
         }
     }
 end
@@ -443,6 +445,8 @@ function draw_clonky()
     for note, coords in pairs(clonky_active) do
         g:led(coords.x, coords.y, high_light)
     end
+
+    g:led(9, current_velocity_index, high_light)
 end
 
 -- TODO: Better to just create the scale once then update when needed. Quickest version while testing the idea.
@@ -454,18 +458,23 @@ function get_midi_note_from_keyboard(x, y)
 end
 
 function handle_grid_keys_clonky(x, y, pressed)
-    local midi_note = get_midi_note_from_keyboard(x, y)
-    local player = params:lookup_param("keyboard_voice"):get_player()
+    if x <= 8 then
+        local midi_note = get_midi_note_from_keyboard(x, y)
+        local player = params:lookup_param("keyboard_voice"):get_player()
 
-    if pressed == 1 then
-        -- TODO: Set velocity elsewhere on grid, default to 0.9 if no selection
-        player:note_on(midi_note, 1)
-        print("Note on: " .. midi_note)
-        clonky_active[midi_note] = {x = x, y = y}  -- Store active note with its grid coordinates
-    else
-        player:note_off(midi_note)
-        print("Note off: " .. midi_note)
-        clonky_active[midi_note] = nil  -- Remove note from active list when released
+        if pressed == 1 then
+            -- TODO: Set velocity elsewhere on grid, default to 0.9 if no selection
+            player:note_on(midi_note, velocity)
+            print("Note on: " .. midi_note, velocity)
+            clonky_active[midi_note] = {x = x, y = y}  -- Store active note with its grid coordinates
+        else
+            player:note_off(midi_note)
+            print("Note off: " .. midi_note)
+            clonky_active[midi_note] = nil  -- Remove note from active list when released
+        end
+    elseif x == 9 then
+        current_velocity_index = y
+        velocity = velocity_root + (0.05 * (8 - y))
     end
 
     grid_redraw()
@@ -695,6 +704,8 @@ function enc(n, d)
                 keyboard_root_octave = util.clamp(keyboard_root_octave + d, 0, 8)
             elseif config_selected_param == 3 then
                 keyboard_string_distance = util.clamp(keyboard_string_distance + d, 1, 8)
+            elseif config_selected_param == 4 then
+                velocity_root = util.clamp(velocity_root + (d * 0.05), 0, 0.6)
             end
         end
     end
