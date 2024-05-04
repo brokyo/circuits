@@ -114,11 +114,11 @@ local keyboard_param_names = {
     }
 }
 
-local keyboard_voice_index = 0
+local keyboard_voice_index = 1
 local keyboard_root_octave = 2
 local keyboard_string_distance = 5
 local velocity_root = 0.6
-local velocity = 0.6
+local velocity = 0.95
 
 -- UI > Naming maps
 local config_options = {"Wave", "Voice", "Step"} -- Naming config pages for UI
