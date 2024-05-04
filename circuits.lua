@@ -446,7 +446,7 @@ function draw_clonky()
         g:led(coords.x, coords.y, high_light)
     end
 
-    g:led(9, current_velocity_index, high_light)
+    g:led(9, current_velocity_index, 7 + (8 - current_velocity_index))
 end
 
 -- TODO: Better to just create the scale once then update when needed. Quickest version while testing the idea.
