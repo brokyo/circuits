@@ -45,7 +45,7 @@ local config_selected_param = 1 -- Track selected parameter for setting screen.l
 local selected_step = 1 -- Individual step to edit
 
 -- UI > Navigation View
-local app_mode_index = 2
+local app_mode_index = 3
 local navigation_selected_param = 1
 local navigation_parms_names = {
     "wave",
@@ -107,9 +107,9 @@ local keyboard_param_names = {
     }
 }
 
-local keyboard_voice_index = 1
+local keyboard_voice_index = 21
 local keyboard_root_octave = 2
-local keyboard_string_distance = 5
+local keyboard_string_distance = 4
 local velocity_root = 0.6
 local velocity = 0.95
 
@@ -509,6 +509,7 @@ end
 local keyboard_root_octave = 1
 local clonky_active = {}
 local current_velocity_index = 1
+local keyboard_active_notes = {}
 
 function get_keyboard_config_values()
     return {
@@ -535,36 +536,67 @@ function draw_clonky()
     g:led(9, current_velocity_index, 7 + (8 - current_velocity_index))
 end
 
--- TODO: Better to just create the scale once then update when needed. Quickest version while testing the idea.
 function get_midi_note_from_keyboard(x, y)
     local octave_offset = keyboard_root_octave * 12
     local note_index = (8 - y) + ((x - 1) * keyboard_string_distance) + 1
 
     local offset_index = octave_offset + note_index
-    print("Note Index: " .. note_index .. " Total Offset: " .. offset_index)
-    return scale[offset_index]
+    -- print("Note Index: " .. note_index .. " Total Offset: " .. offset_index)
+    return scale[offset_index], note_index
 end
+
+local active_notes_indices = {}  -- List to store active note indices
 
 function handle_grid_keys_clonky(x, y, pressed)
     if x <= 8 then
-        local midi_note = get_midi_note_from_keyboard(x, y)
+        local midi_note, note_index = get_midi_note_from_keyboard(x, y)
         local player = params:lookup_param("keyboard_voice"):get_player()
+
+        local function translate_note_index_to_octave_and_offset(note_index)
+            local octave = math.floor((note_index - 1) / 7)
+            local offset = (note_index - 1) % 7 + 1
+            return octave, offset
+        end
+
+        local octave, offset = translate_note_index_to_octave_and_offset(note_index)
+
+        -- print("Oct: " .. octave .. " Deg: " .. offset)
 
         if pressed == 1 then
             player:note_on(midi_note, velocity)
-            -- print("Note index: " .. midi_note, velocity)
             clonky_active[midi_note] = {x = x, y = y}  -- Store active note with its grid coordinates
+            local note_data = {octave, offset}
+            if not table.contains(active_notes_indices, note_data) then
+                table.insert(active_notes_indices, note_data)  -- Add this note data to the list if not already present
+            end
         else
             player:note_off(midi_note)
-            -- print("Note off: " .. midi_note)
             clonky_active[midi_note] = nil  -- Remove note from active list when released
+            -- Remove this note data from the list
+            for i, v in ipairs(active_notes_indices) do
+                if v[1] == octave and v[2] == offset then
+                    table.remove(active_notes_indices, i)
+                    break
+                end
+            end
         end
     elseif x == 9 then
         current_velocity_index = y
         velocity = velocity_root + (0.05 * (8 - y))
     end
 
+    redraw()
     grid_redraw()
+end
+
+-- Helper function to check if a table contains a value
+function table.contains(table, element)
+    for _, value in pairs(table) do
+        if value == element then
+            return true
+        end
+    end
+    return false
 end
 
 ------------------------------
@@ -902,6 +934,14 @@ function draw_navigation()
         screen.text("TRACKER")
     elseif app_mode_index == 3 then
         screen.font_size(8)
+        screen.level(0)
+        local base_y = 10
+        local line_height = 8  -- Adjust line height as needed
+        for i, note_data in ipairs(active_notes_indices) do
+            screen.move(105, base_y + (i - 1) * line_height)
+            screen.text_center("[ " .. note_data[1] .. "," .. note_data[2] .. " ]")
+        end
+
         screen.level(6)
         screen.move(105, 40)
         screen.text_center("k3")
