@@ -92,8 +92,8 @@ local param_names_table = {
         "Step", 
         "Velocity", 
         "Swing", 
-        "BPM Ratio", 
-        "Step Len"
+        "Stage:Clock ", 
+        "Note Hold"
     }
 }
 
@@ -114,9 +114,9 @@ local velocity_root = 0.6
 local velocity = 0.95
 
 -- UI > Naming maps
-local config_options = {"Structure", "Phase", "Voice", "Step"} -- Naming config pages for UI
-local division_options = {1/16, 1/8, 1/4, 1/3, 1/2, 2/3, 1, 2, 3, 4, 5, 8, 12} -- Possible step divisions
-local division_option_names = {"/16", "/8", "/4", "/(1/3)", "/2", "/(2/3)", "x1", "x2", "x3", "x4", "x5", "x8", "x12"} -- Names as strings for showing in param list
+local config_options = {"Structure", "Phase", "Voice", "Stage"} -- Naming config pages for UI
+local division_options = {1/16, 1/8, 1/4, 1/2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12} -- Possible step divisions
+local division_option_names = {"16:1", "8:1", "4:1", "2:1", "1:1", "1:2", "1:3", "1:4", "1:5", "1:6", "1:7", "1:8", "1:9", "x1:10", "1:11", "1:12"} -- Names as strings for showing in param list
 local clock_modifider_options = {8, 4, 2, 1, 1/2, 1/4, 1/8} -- Multiplied to duration selection to set wave-wide clock modifications
 local clock_modifider_options_names = {"/8", "/4", "/2", "x1", "x2", "x4", "x8"}
 
