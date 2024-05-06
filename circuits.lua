@@ -21,7 +21,10 @@ local scale = {}
 -- Updates globally used scale. Called when tonic or scale type changes
 function build_scale()
     local root_note = tonic_index - 1 -- Adjust tonic by 1 to match MIDI range (0 > 127) due to Lua indexing
-    local new_scale = musicutil.generate_scale(root_note, scale_type_index, 10)
+    local new_scale = musicutil.generate_scale(root_note, scale_type_index, 11)
+    for i = 1, 8 do
+        print("b_s(): MIDI: " .. new_scale[i] .. " Degree: " .. i)
+    end
 
     scale = new_scale
 end
@@ -45,7 +48,7 @@ local config_selected_param = 1 -- Track selected parameter for setting screen.l
 local selected_step = 1 -- Individual step to edit
 
 -- UI > Navigation View
-local app_mode_index = 3
+local app_mode_index = 2
 local navigation_selected_param = 1
 local navigation_parms_names = {
     "wave",
@@ -357,12 +360,12 @@ function handle_grid_keys_tracker(x, y, pressed)
     elseif x <= 12 and pressed == 1 then
         local working_tracker = trackers[active_tracker_index]
         local working_phase = working_tracker.phases[active_phase_index]
-        local selected_degree_offset = working_tracker.root_octave * 8 + tonic_index + scrolling_degree_offset
+        local selected_degree_offset = working_tracker.root_octave * 7 + scrolling_degree_offset + 1
 
         -- -- Invert grid row count (for usability), offset by e1 turns, increment by one for Lua indexing 
         local coordinate_map = 8 - y
         local degree = coordinate_map + selected_degree_offset
-        print('Degree added: ' .. degree)
+        print("Tracker: MIDI: " .. scale[degree] .. " Degree: " .. degree)
 
         -- Check if the degree is already selected
         local index = nil
@@ -389,22 +392,20 @@ end
 
 -- The canvas extends from the first note of `scale` to the final one. We use e1 to move through this space.
 function draw_tracker_canvas(working_tracker, working_phase)
-    local grid_height = 8
-    local scale_length = #scale
-
-    local window_start = working_tracker.root_octave * 8 + tonic_index -- Pick the starting grid window
+    -- NB | I think I don't need the tonic index
+    -- local window_start = working_tracker.root_octave * 7 + tonic_index -- Pick the starting grid window
+    local window_start = working_tracker.root_octave * 7 + 1
     -- Define the adjusted degree range currently on grid
     local adjusted_window_start = window_start + scrolling_degree_offset
     local adjusted_window_end =  adjusted_window_start + 7
 
     -- Draw Tracker
     for step = 1, 12 do
-        local window_y = 8 - (window_start - adjusted_window_start)
+
+        -- Highlight the rows the represent the octave for easier navigation
         for y = 1, 8 do
-            -- Calculate the scale position corresponding to the current grid row
-            local scale_position = adjusted_window_start + (8 - y)
-            -- Check if the scale position is a multiple of 8 from the first value
-            if (scale_position - window_start) % 8 == 0 then
+            local degree = adjusted_window_start + (8 - y) -- Calculate the degree for this row
+            if degree % 7 == 1 then -- Check if the degree is the start of an octave
                 g:led(step, y, inactive_light)
             end
         end
@@ -522,6 +523,7 @@ function get_keyboard_config_values()
     }
 end
 
+-- UI Layer on keyboard
 function draw_clonky()
     for x = 1, 8 do
         for y = 1, 8 do
@@ -533,34 +535,39 @@ function draw_clonky()
         g:led(coords.x, coords.y, high_light)
     end
 
+    -- TODO: Light entire column with dim_light
     g:led(9, current_velocity_index, 7 + (8 - current_velocity_index))
 end
 
+-- Translates x, y coordinates from grid into degrees. Each column offset by a configurable amount. "String-like"
 function get_midi_note_from_keyboard(x, y)
-    local octave_offset = keyboard_root_octave * 12
-    local note_index = (8 - y) + ((x - 1) * keyboard_string_distance) + 1
+    local octave_offset = keyboard_root_octave * 7
+    local string_offset = (x-1) * keyboard_string_distance -- offset the value of additional columns sby configurable string distance
+    local note_index = (8 - y) + string_offset + 1 -- Invert y values, add string offset, add 1 for Lua one-indexing
 
-    local offset_index = octave_offset + note_index
-    -- print("Note Index: " .. note_index .. " Total Offset: " .. offset_index)
-    return scale[offset_index], note_index
+    local scale_degree = octave_offset + note_index -- Add keyboard offset to octave offset to get the scale degree
+    local midi_note = scale[scale_degree]
+    print("Clonky: MIDI: " .. midi_note .. " Degree: " .. scale_degree)
+    return midi_note, note_index
 end
 
 local active_notes_indices = {}  -- List to store active note indices
+
+-- Translate note number to octave and degree number for visualization
+local function translate_note_index_to_octave_and_offset(note_index)
+    local octave = keyboard_root_octave + math.floor((note_index - 1) / 7)
+    local offset = (note_index - 1) % 7 + 1
+    return octave, offset
+end
+
 
 function handle_grid_keys_clonky(x, y, pressed)
     if x <= 8 then
         local midi_note, note_index = get_midi_note_from_keyboard(x, y)
         local player = params:lookup_param("keyboard_voice"):get_player()
 
-        local function translate_note_index_to_octave_and_offset(note_index)
-            local octave = math.floor((note_index - 1) / 7)
-            local offset = (note_index - 1) % 7 + 1
-            return octave, offset
-        end
 
         local octave, offset = translate_note_index_to_octave_and_offset(note_index)
-
-        -- print("Oct: " .. octave .. " Deg: " .. offset)
 
         if pressed == 1 then
             player:note_on(midi_note, velocity)
@@ -695,6 +702,7 @@ function enc(n, d)
     -- Encoder 1 adjusts in pattern creation mode. May be useful elswhere too?
     if n == 1 then 
         if app_mode_index == 2 then
+            -- TODO: Clamp this so that it cannot go below the 0th octave or above the 12th. Need to offset looking at `Center Oct` or something
             scrolling_degree_offset = scrolling_degree_offset - d
             grid_redraw()  -- Redraw the grid to reflect the offset change
         end
@@ -743,7 +751,10 @@ function enc(n, d)
                     local new_clock_mod_index = util.clamp(current_mod_index + d, 1, #clock_modifider_options)
                     trackers[active_tracker_index].clock_modifider = clock_modifider_options[new_clock_mod_index]           
                 elseif config_selected_param == 3 then -- Change root octave
-                    trackers[active_tracker_index].root_octave = util.clamp(trackers[active_tracker_index].root_octave + d, 1, 8)
+                    local old_octave = trackers[active_tracker_index].root_octave
+                    local new_octave = util.clamp(old_octave + d, 0, 8)
+                    trackers[active_tracker_index].root_octave = new_octave
+                    -- update_phases_with_new_octave(trackers[active_tracker_index], old_octave, new_octave)
                 end
             end
         ------------
@@ -1006,6 +1017,18 @@ end
 
 function is_in_range(value, min, max) -- Check to see if a value is within a range
     return value >= min and value <= max
+end
+
+function update_phases_with_new_octave(tracker, old_octave, new_octave)
+    local octave_difference = new_octave - old_octave
+    local degree_offset = 7 * octave_difference  -- Calculate the degree offset based on the octave change
+    for _, phase in ipairs(tracker.phases) do
+        for _, step in ipairs(phase.steps) do
+            for i, degree in ipairs(step.degrees) do
+                step.degrees[i] = degree + degree_offset
+            end
+        end
+    end
 end
 
 ------------------
