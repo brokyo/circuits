@@ -91,14 +91,16 @@ local param_names_table = {
         "Menu",
         "Tracker:Clock ",
         "Center Oct",
+        "Beats To Sleep"
     },
     -- Phases
     {
         "Menu",
+        "Clear Phase",
+        "Cpy Adj Phase",
         "Total Phases",
         "Phase 1 Cycles",
         "Phase 2 Cycles",
-        "Beats To Sleep"
     },
     -- Voice
     {
@@ -408,8 +410,6 @@ end
 
 -- The canvas extends from the first note of `scale` to the final one. We use e1 to move through this space.
 function draw_tracker_canvas(working_tracker, working_phase)
-    -- NB | I think I don't need the tonic index
-    -- local window_start = working_tracker.root_octave * 7 + tonic_index -- Pick the starting grid window
     local window_start = working_tracker.root_octave * 7 + 1
     -- Define the adjusted degree range currently on grid
     local adjusted_window_start = window_start + scrolling_degree_offset
@@ -675,22 +675,28 @@ function get_param_values_table() -- Returns a refresehed table of all param val
     local active_tracker = trackers[active_tracker_index]
     local active_phase = active_tracker.phases[active_phase_index]
     return {
+        -- Structure
         {
             config_options[active_config_index],
             tostring(clock_modifider_options_names[index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)]),
-            tostring(trackers[active_tracker_index].root_octave)
-        },
-        {
-            config_options[active_config_index],
-            tostring(active_tracker.total_phases),
-            tostring(active_tracker.phases[1].total_cycles),
-            tostring(active_tracker.phases[2].total_cycles),
+            tostring(trackers[active_tracker_index].root_octave),
             tostring(active_tracker.beats_to_rest)
         },
+        -- Phases
+        {
+            config_options[active_config_index],
+            "(K2)",
+            "(K2)",
+            tostring(active_tracker.total_phases),
+            tostring(active_tracker.phases[1].total_cycles),
+            tostring(active_tracker.phases[2].total_cycles)
+        },
+        -- Voice
         {
             config_options[active_config_index],
             tostring(nb_voices[trackers[active_tracker_index].voice_index])
         },
+        -- Step
         {
             config_options[active_config_index],
             tostring(selected_step), 
@@ -705,7 +711,32 @@ end
 -----------------------
 -- Physical Controls --
 -----------------------
+function reset_phase()
+    trackers[active_tracker_index].phases[active_phase_index].steps = {}
+    for i = 1, max_steps do
+        table.insert(trackers[active_tracker_index].phases[active_phase_index].steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
+    end
+    grid_redraw()
+end
+
+function clone_neighbor_phase()
+    local index_to_copy = (active_phase_index % 2) + 1
+    local phase_data_to_copy =  trackers[active_tracker_index].phases[index_to_copy].steps
+    trackers[active_tracker_index].phases[active_phase_index].steps = phase_data_to_copy
+
+    grid_redraw()
+end
+
 function key(n, z)
+    -- K2 Handles Menu Controls
+    -- TODO: This is *so* brittle
+    if n == 2 and z == 1 then
+        if active_config_index == 2 and config_selected_param == 2 then -- Clear Patter
+            reset_phase()
+        elseif active_config_index == 2 and config_selected_param == 3 then -- Copy Neighbor Pattern
+            clone_neighbor_phase()
+        end
+    end
     -- K3 Switch app modes
     if n == 3 and z == 1 then
         app_mode_index = (app_mode_index % 3) + 1
@@ -760,17 +791,21 @@ function enc(n, d)
         ---------------
         if active_config_index == 1 then
             if n == 3 then
-                if config_selected_param == 1 then
+                if config_selected_param == 1 then -- Menu Selector
                     active_config_index = util.clamp(active_config_index + d, 1, #config_options)
-                elseif config_selected_param == 2 then
+                elseif config_selected_param == 2 then -- Control Clock
                     local current_mod_index = index_of(clock_modifider_options, trackers[active_tracker_index].clock_modifider)
                     local new_clock_mod_index = util.clamp(current_mod_index + d, 1, #clock_modifider_options)
                     trackers[active_tracker_index].clock_modifider = clock_modifider_options[new_clock_mod_index]           
-                elseif config_selected_param == 3 then -- Change root octave
+                elseif config_selected_param == 3 then -- Change Octave
                     local old_octave = trackers[active_tracker_index].root_octave
                     local new_octave = util.clamp(old_octave + d, 0, 8)
                     trackers[active_tracker_index].root_octave = new_octave
                     -- update_phases_with_new_octave(trackers[active_tracker_index], old_octave, new_octave)
+                elseif config_selected_param == 4 then -- Loop Sleep
+                    local beats_to_rest = active_tracker.beats_to_rest
+                    local beat_count = util.clamp(beats_to_rest + d, 0, 4)
+                    active_tracker.beats_to_rest = beat_count
                 end
             end
         ------------
@@ -778,24 +813,24 @@ function enc(n, d)
         ------------
         elseif active_config_index == 2 then
             if n == 3 then
-                if config_selected_param == 1 then
+                if config_selected_param == 1 then -- Menu Selector
                     active_config_index = util.clamp(active_config_index + d, 1, #config_options)
-                elseif config_selected_param == 2 then
+                elseif config_selected_param == 2 then -- Clear Phase
+
+                elseif config_selected_param == 3 then -- Clone Phase
+                
+                elseif config_selected_param == 4 then
                     local total_phases = active_tracker.total_phases
                     local phase_count = util.clamp(total_phases + d, 1, 2)
                     active_tracker.total_phases = phase_count                    
-                elseif config_selected_param == 3 then
+                elseif config_selected_param == 5 then
                     local phase_cycles = active_tracker.phases[1].total_cycles
                     local phase_count = util.clamp(phase_cycles + d, 1, 4)
                     active_tracker.phases[1].total_cycles = phase_count
-                elseif config_selected_param == 4 then
+                elseif config_selected_param == 6 then
                     local phase_cycles = active_tracker.phases[2].total_cycles
                     local phase_count = util.clamp(phase_cycles + d, 1, 4)
                     active_tracker.phases[2].total_cycles = phase_count
-                elseif config_selected_param == 5 then
-                    local beats_to_rest = active_tracker.beats_to_rest
-                    local beat_count = util.clamp(beats_to_rest + d, 0, 4)
-                    active_tracker.beats_to_rest = beat_count
                 end
             end
         -----------
