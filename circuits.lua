@@ -1,6 +1,22 @@
--- Expressive Pattern Creator
+-- Circuits v0.9
+-- An expressive pattern canvas
+--
 -- awakening.systems
-
+--
+--
+-- K3 to change modes
+--
+-- Mode: Keyboard (Plonky-Like)
+-- -- Degree location organized 
+-- -- in string. Configurable.
+--
+-- Mode: Two-Phase Tracker
+-- -- Organized by scale degree
+-- -- E1 to scroll scale
+-- -- Row 8 to change tracker
+-- -- Row 7 to play
+-- -- Row 6 to select fist phase
+-- -- Row 5 to select second
 
 --------------------
 -- Core libraries --
