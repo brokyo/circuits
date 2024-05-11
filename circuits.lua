@@ -871,7 +871,7 @@ function enc(n, d)
                     local old_octave = trackers[active_tracker_index].root_octave
                     local new_octave = util.clamp(old_octave + d, 0, 8)
                     trackers[active_tracker_index].root_octave = new_octave
-                    -- update_phases_with_new_octave(trackers[active_tracker_index], old_octave, new_octave)
+                    update_phases_with_new_octave(trackers[active_tracker_index], old_octave, new_octave)
                 elseif config_selected_param == 4 then -- Loop Sleep
                     local beats_to_rest = active_tracker.beats_to_rest
                     local beat_count = util.clamp(beats_to_rest + d, 0, 4)
