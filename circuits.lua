@@ -26,6 +26,24 @@ local musicutil = require "musicutil"
 local lattice = require "lattice"
 local g = grid.connect()
 
+---------------
+-- Utilities --
+---------------
+function deep_copy_table(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deep_copy_table(orig_key)] = deep_copy_table(orig_value)
+        end
+        setmetatable(copy, deep_copy_table(getmetatable(orig)))
+    else -- for number, string, boolean, etc
+        copy = orig
+    end
+    return copy
+end
+
 -------------------
 -- Global Timbre --
 -------------------
@@ -54,7 +72,16 @@ local active_phase_index = 1 -- Working phase on norns and grid
 
 -- Global Tracker Management
 local max_steps = 12
-
+local step_defaults = {
+    degrees = {},
+    velocity = 0.9,
+    division = 1/4,
+    duration = 1,
+    swing = 50,
+    probability = 100,
+    ratchet_count = 0,
+    ratchet_bend = false
+}
 -- UI 
 -- UI > Index for nav/data
 local active_ui_pane = 1 -- Determines which norns pane is active. Controlled by k2 and k3
@@ -112,9 +139,12 @@ local param_names_table = {
         "Menu",
         "Step", 
         "Velocity", 
-        "Swing", 
         "Stage:Clock ", 
-        "Stage:Note "
+        "Stage:Note ",
+        "Swing", 
+        "Probability",
+        "Ratchets",
+        "Ratchet Bend"
     }
 }
 
@@ -188,8 +218,8 @@ function create_tracker(voice_id, root_octave) -- Create trackers and set defaul
     
     -- Initialize steps with default values
     for i = 1, max_steps do
-        table.insert(tracker.phases[1].steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
-        table.insert(tracker.phases[2].steps, {degrees = {}, velocity = 0.9, swing = 50, division = 1/4, duration = 1})
+        table.insert(tracker.phases[1].steps, deep_copy_table(step_defaults))
+        table.insert(tracker.phases[2].steps, deep_copy_table(step_defaults))
     end
     
     return tracker
@@ -222,7 +252,37 @@ function create_sequencers()
                         for _, degree in ipairs(degree_table) do  -- If it does is, iterate through each degree
                             local note = scale[degree] -- And match it to the appropriate note in the scale
                             local player = params:lookup_param("voice_" .. i):get_player() -- Get the n.b voice
-                            player:play_note(note, current_step.velocity, modified_duration) -- And play the note
+
+                            local probability_check = math.random()
+                            if probability_check < current_step.probability / 100 then
+                                -- Handle ratcheting
+                                if current_step.ratchet_count == 0 then
+                                    -- Play a single note when ratchet_count is 0
+                                    clock.run(function()
+                                        player:play_note(note, current_step.velocity, modified_duration)
+                                    end)
+                                else
+                                    -- Ratchet logic when ratchet_count is greater than 0
+                                    local ratchet_interval = modified_division / (current_step.ratchet_count + 1)
+                                    for r = 0, current_step.ratchet_count do
+                                        local ratchet_delay = r * ratchet_interval
+                                        clock.run(function()
+                                            local velocity = current_step.velocity
+                                            if current_step.ratchet_bend then
+                                                local delay_adjustment = (math.random() * 0.1 - 0.1) * modified_division
+                                                local velocity_adjustment = (math.random() * 0.2 - 0.15) * current_step.velocity
+                                                ratchet_delay = ratchet_delay + delay_adjustment
+                                                ratchet_velocity = current_step.velocity + velocity_adjustment
+                                            end
+                                            local sleep_duration = math.max(0, ratchet_delay)
+                                            clock.sleep(ratchet_delay)
+                                            print('ratchet: ' .. r .. ' division: ' .. ratchet_delay .. ' velocity ' .. ratchet_velocity) 
+
+                                            player:play_note(note, velocity, ratchet_interval)
+                                        end)
+                                    end
+                                end
+                            end
                         end
                     end
                     
@@ -376,6 +436,7 @@ function handle_grid_keys_tracker(x, y, pressed)
     if x >= CONTROL_COLUMNS_START and x <= CONTROL_COLUMNS_END then
         handle_control_column_press(x, y, pressed)
     elseif x <= 12 and pressed == 1 then
+        print(x)
         local working_tracker = trackers[active_tracker_index]
         local working_phase = working_tracker.phases[active_phase_index]
         local selected_degree_offset = working_tracker.root_octave * 7 + scrolling_degree_offset + 1
@@ -403,7 +464,6 @@ function handle_grid_keys_tracker(x, y, pressed)
             table.insert(working_phase.steps[x].degrees, degree)
         end
 
-        -- tab.print(working_phase.steps[x].degrees)
         grid_redraw()
     end
 end
@@ -701,9 +761,12 @@ function get_param_values_table() -- Returns a refresehed table of all param val
             config_options[active_config_index],
             tostring(selected_step), 
             tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].velocity), 
-            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].swing), 
             division_option_names[index_of(division_options, trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].division)], 
-            division_option_names[index_of(division_options, trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].duration)]
+            division_option_names[index_of(division_options, trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].duration)],
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].swing), 
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].probability), 
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].ratchet_count), 
+            tostring(trackers[active_tracker_index].phases[active_phase_index].steps[selected_step].ratchet_bend)
         }
     }
 end
@@ -711,6 +774,12 @@ end
 -----------------------
 -- Physical Controls --
 -----------------------
+function handle_scroll_input(d)
+    local param_names_count = #param_names_table[active_config_index]
+    scroll_index = util.clamp(scroll_index + d, 1, param_names_count)
+    redraw()
+end
+
 function reset_phase()
     trackers[active_tracker_index].phases[active_phase_index].steps = {}
     for i = 1, max_steps do
@@ -785,6 +854,7 @@ function enc(n, d)
     if app_mode_index == 2 then
         if n == 2 then
             config_selected_param = util.clamp(config_selected_param + d, 1, #param_names_table[active_config_index])
+            handle_scroll_input(d)
         end
         ---------------
         -- Structure --
@@ -858,16 +928,22 @@ function enc(n, d)
                     selected_step = util.clamp(selected_step + d, 1, trackers[active_tracker_index].phases[active_phase_index].length)
                 elseif config_selected_param == 3 then -- Modify velocity
                     step.velocity = util.clamp(step.velocity + d*0.01, 0, 1) -- Increment by 0.01 for finer control
-                elseif config_selected_param == 4 then -- Modify swing
-                    step.swing = util.clamp(step.swing + d, 0, 100)
-                elseif config_selected_param == 5 then -- Modify division
+                elseif config_selected_param == 4 then -- Modify division
                     local current_division_index = index_of(division_options, step.division)
                     local new_division_index = util.clamp(current_division_index + d, 1, #division_options)
                     step.division = division_options[new_division_index]
-                elseif config_selected_param == 6 then -- Modify duration
+                elseif config_selected_param == 5 then -- Modify duration
                     local current_duration_index = index_of(division_options, step.duration)
                     local new_duration_index = util.clamp(current_duration_index + d, 1, #division_options)
                     step.duration = division_options[new_duration_index]
+                elseif config_selected_param == 6 then -- Modify swing
+                    step.swing = util.clamp(step.swing + d, 0, 100)
+                elseif config_selected_param == 7 then -- Probability
+                    step.probability = util.clamp(step.probability + d, 0, 100)
+                elseif config_selected_param == 8 then -- Ratchet Count
+                    step.ratchet_count = util.clamp(step.ratchet_count + d, 0, 4)
+                elseif config_selected_param == 9 then -- Ratchet Bend
+                    step.ratchet_bend = not step.ratchet_bend
                 end
             end
         end
@@ -926,13 +1002,16 @@ function draw_settings()
         local param_names = param_names_table[active_config_index]
         local param_values = get_param_values_table()[active_config_index]
 
+        local list_start = math.max(1, math.min(scroll_index, #param_names - max_items_on_screen + 1))
         local list_end = math.min(#param_names, scroll_index + max_items_on_screen - 1)
 
-        for i = scroll_index, list_end do
-            local y = 10 + (i - scroll_index) * 10 -- Adjust y position based on scroll_index
-            screen.level(i == config_selected_param and 15 or 5) -- Highlight the active parameter
+        -- TODO: This approach isn't optimal, as I would prefer there are always six items on screen
+        -- -- But this is a pain right now and I don't want to deal with it.
+        for i = list_start, list_end do
+            local y = 10 + (i - scroll_index) * 10
+            screen.level(i == config_selected_param and 15 or 5) 
             screen.move(2, y)
-            screen.text(param_names[i - scroll_index + 1] .. ": " .. param_values[i - scroll_index + 1])
+            screen.text(param_names[i] .. ": " .. param_values[i])
         end
     elseif app_mode_index == 3 then
         local param_names = keyboard_param_names[1]
