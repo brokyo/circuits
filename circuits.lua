@@ -267,12 +267,12 @@ function create_sequencers()
                                     for r = 0, current_step.ratchet_count do
                                         local ratchet_delay = r * ratchet_interval
                                         clock.run(function()
-                                            local velocity = current_step.velocity
+                                            local ratchet_velocity = current_step.velocity
                                             if current_step.ratchet_bend then
                                                 local delay_adjustment = (math.random() * 0.1 - 0.1) * modified_division
                                                 local velocity_adjustment = (math.random() * 0.2 - 0.15) * current_step.velocity
                                                 ratchet_delay = ratchet_delay + delay_adjustment
-                                                ratchet_velocity = current_step.velocity + velocity_adjustment
+                                                ratchet_velocity = ratchet_velocity + velocity_adjustment
                                             end
                                             local sleep_duration = math.max(0, ratchet_delay)
                                             clock.sleep(ratchet_delay)
