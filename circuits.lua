@@ -821,7 +821,7 @@ function enc(n, d)
     if n == 1 then 
         if app_mode_index == 2 then
             -- TODO: Clamp this so that it cannot go below the 0th octave or above the 12th. Need to offset looking at `Center Oct` or something
-            scrolling_degree_offset = scrolling_degree_offset - d
+            scrolling_degree_offset = util.clamp(scrolling_degree_offset - d, -24, 24)
             grid_redraw()  -- Redraw the grid to reflect the offset change
         end
     end
