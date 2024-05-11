@@ -808,7 +808,9 @@ function key(n, z)
     end
     -- K3 Switch app modes
     if n == 3 and z == 1 then
+        scroll_index = 1
         app_mode_index = (app_mode_index % 3) + 1
+        config_selected_param = 1
         grid_redraw()
         redraw()
     end
