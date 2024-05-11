@@ -158,7 +158,7 @@ local keyboard_param_names = {
     }
 }
 
-local keyboard_voice_index = 21
+local keyboard_voice_index = 1
 local keyboard_root_octave = 2
 local keyboard_string_distance = 4
 local velocity_root = 0.6
