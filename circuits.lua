@@ -202,12 +202,14 @@ function create_tracker(voice_id, root_octave) -- Create trackers and set defaul
         -- Playback Phases
         phases = {
             {
+                id = 1,
                 steps = {},
                 length = max_steps,
                 current_cycle = 1,
                 total_cycles = 2
             },
             {
+                id = 2,
                 steps = {},
                 length = max_steps,
                 current_cycle = 1,
@@ -487,7 +489,7 @@ function draw_tracker_canvas(working_tracker, working_phase)
         end
         
         -- Highlight entire step column while tracker is playing
-        if working_tracker.playing then
+        if working_tracker.playing and working_tracker.current_phase == active_phase_index  then
             if step == working_tracker.current_position then
                 for y = 1, 8 do 
                     g:led(step, y, inactive_light)
@@ -501,7 +503,7 @@ function draw_tracker_canvas(working_tracker, working_phase)
             -- If it's in the current window, use one set of highlight rules
             if is_in_range(active_degree, adjusted_window_start, adjusted_window_end) then
                 local mapped_grid_y = 8 - (active_degree - adjusted_window_start)
-                if step == working_tracker.current_position then 
+                if step == working_tracker.current_position and working_tracker.current_phase == active_phase_index  then 
                     g:led(step, mapped_grid_y, max_light)
                 else
                     g:led(step, mapped_grid_y, medium_light) 
@@ -791,7 +793,7 @@ end
 function clone_neighbor_phase()
     local index_to_copy = (active_phase_index % 2) + 1
     local phase_data_to_copy =  trackers[active_tracker_index].phases[index_to_copy].steps
-    trackers[active_tracker_index].phases[active_phase_index].steps = phase_data_to_copy
+    trackers[active_tracker_index].phases[active_phase_index].steps = deep_copy_table(phase_data_to_copy)
 
     grid_redraw()
 end
