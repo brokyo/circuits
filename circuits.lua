@@ -185,6 +185,17 @@ local trackers = {} -- Table for referencing trackers
 local sequencers = {}
 local primary_lattice = lattice:new()
 
+function get_stage_duration(tracker_index, phase_index)
+    local tracker = trackers[tracker_index]
+    local phase = tracker.phases[phase_index]
+    local step = phase.steps[tracker.current_position]
+    local clock_modifider = tracker.clock_modifider
+    local beat_sec = clock.get_beat_sec()
+    local stage_duration = beat_sec * clock_modifider * step.division
+
+    return(stage_duration)
+end
+
 function create_tracker(voice_id, root_octave) -- Create trackers and set defaults
     local tracker = {
         -- Voice Config
@@ -325,6 +336,7 @@ end
 -- Grid > lighting 
 local inactive_light = 2
 local dim_light = 3
+local low_light = 5
 local medium_light = 9
 local high_light = 11
 local max_light = 15
@@ -555,8 +567,20 @@ function draw_tracker_controls(working_tracker, working_phase)
     -- Display playback status for each tracker
     for i = 1, #trackers do
         -- Active playing illumination
-        local playback_light = trackers[i].playing and medium_light or 0
-        g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playback_light)
+        local playback_light = trackers[i].playing and low_light or 0
+        if trackers[i].playing then
+            if #trackers[i].phases[trackers[i].current_phase].steps[trackers[i].current_position].degrees > 0 then
+              g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, max_light)
+                -- NB: This works, but it might break when I fix the way the grid redraws on stage/phase change
+              clock.run(function()
+                    local duration = get_stage_duration(i, trackers[i].current_phase)
+                    clock.sleep(duration * 0.75)
+                    g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_RISING_ROW, playback_light)
+                end)
+            else
+                g:led(CONTROL_COLUMNS_START + i - 1, PLAYBACK_STATUS_ROW, playback_light)
+            end
+        end
 
         -- Soft light all phase rows
         g:led(CONTROL_COLUMNS_START + i - 1, TRACKER_FALLING_ROW, dim_light)
